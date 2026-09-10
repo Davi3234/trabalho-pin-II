@@ -27,12 +27,17 @@ ignis/
 │   ├── mini_escopo_IGNIS.md
 │   └── interpretacao_focos.md  # metodologia da camada de interpretação (clustering, criticidade, limitações)
 ├── backend/                     # (a criar na 3ª fase) API FastAPI
-├── frontend/                    # (a criar na 3ª fase) dashboard React + mapa
+├── frontend/                    # dashboard React + Vite — 1ª iteração: mapa de focos/clusters
 └── README.md
 ```
 
-`backend/` e `frontend/` ainda não existem neste esqueleto — serão criados na 3ª fase
-(implementação). Por enquanto, o coletor já entrega mais que o CSV cru: com `--interpret`,
+`backend/` ainda não existe — será criado na 3ª fase (implementação). O `frontend/` já
+tem uma primeira iteração: o **mapa** de agrupamentos (raio ∝ FRP, cor pela criticidade
+relativa), com camadas de densidade e focos individuais, lendo uma amostra real do
+relatório de interpretação (ver `frontend/README.md`). As demais visualizações do escopo
+(§6) entram nas próximas iterações.
+
+Por enquanto, o coletor já entrega mais que o CSV cru: com `--interpret`,
 também produz um relatório de interpretação (clusters, densidade, tendência, indicador de
 criticidade) em JSON — pensado para ser reaproveitado pelo backend da 3ª fase sem reescrever a
 lógica de análise. Veja [docs/interpretacao_focos.md](docs/interpretacao_focos.md) para a
@@ -83,7 +88,7 @@ pytest
 - [x] Camada de interpretação dos focos (clustering, densidade, tendência, criticidade) — ver `collector/interpretation/`
 - [ ] Persistir focos e relatórios de interpretação em banco geoespacial (PostgreSQL + PostGIS) — hoje o histórico entre execuções não é deduplicado nem mantido (ver docs/interpretacao_focos.md §7)
 - [ ] Ingerir índice FWI do EFFIS
-- [ ] Dashboard (React + Leaflet/MapLibre + Recharts)
+- [~] Dashboard (React + Leaflet/MapLibre + Recharts) — mapa de focos/clusters feito (`frontend/`); série temporal, ranking e painel FWI pendentes
 - [ ] Alertas por limiar configurável
 - [ ] Camada de IA generativa (boletim + assistente)
 - [ ] Deploy no servidor da UDESC

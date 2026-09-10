@@ -1,20 +1,3 @@
-"""
-IGNIS — Coletor de focos de calor (NASA FIRMS)
-================================================
-
-Baixa focos de calor detectados por satélite (VIIRS/MODIS) para uma região
-delimitada por bounding box, e salva o resultado como CSV local.
-
-Uso:
-    python firms_collector.py
-    python firms_collector.py --region california --days 3
-    python firms_collector.py --bbox -10,35,28,45 --sensor VIIRS_NOAA20_NRT --days 1
-
-Antes de rodar:
-    1. Registre uma MAP_KEY gratuita em https://firms.modaps.eosdis.nasa.gov/api/map_key/
-    2. Copie .env.example para .env e preencha FIRMS_MAP_KEY
-"""
-
 import argparse
 import json
 import logging
@@ -39,18 +22,18 @@ logger = logging.getLogger("ignis.collector")
 
 FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
 
-# Limite da Area API da FIRMS (verificado em firms.modaps.eosdis.nasa.gov/api/area/, 2026-08)
+# limite da Area API da FIRMS
 DAY_RANGE_MIN = 1
 DAY_RANGE_MAX = 5
 
-# Bounding boxes prontos (oeste, sul, leste, norte) — ver mini-escopo §2
+# bounding boxes (oeste, sul, leste, norte)
 REGIONS = {
     "mediterraneo": "-10,35,28,45",
     "grecia": "19,34,29,42",
     "california": "-125,32,-114,42",
 }
 
-# Colunas de interesse do CSV da FIRMS (ver mini-escopo §2)
+# colunas de interesse do CSV da FIRMS
 COLUNAS_UTEIS = [
     "latitude", "longitude", "bright_ti4", "scan", "track",
     "acq_date", "acq_time", "satellite", "confidence", "frp", "daynight",
@@ -90,7 +73,7 @@ def coletar(map_key: str, sensor: str, bbox: str, dias: int) -> pd.DataFrame:
     resp.raise_for_status()
 
     texto = resp.text.strip()
-    # FIRMS retorna erros (MAP_KEY inválida etc.) como texto simples com HTTP 200
+    # erros da FIRMS (MAP_KEY inválida etc.) vêm como texto puro com HTTP 200
     if not texto or "," not in texto.splitlines()[0]:
         raise RuntimeError(f"Resposta inesperada da FIRMS (não é um CSV válido): {texto[:200]!r}")
 

@@ -1,8 +1,7 @@
-"""Análise espacial: densidade por célula e clustering de focos.
+"""Densidade por célula e clustering de focos.
 
-Clustering = componentes conexos por distância haversine + janela temporal
+Clustering: componentes conexos por distância haversine + janela temporal
 (union-find), equivalente a single-linkage / DBSCAN com min_samples=1.
-Metodologia e justificativa completas em docs/interpretacao_focos.md.
 """
 
 from __future__ import annotations

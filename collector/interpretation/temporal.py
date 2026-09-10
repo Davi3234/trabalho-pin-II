@@ -1,7 +1,6 @@
-"""Análise temporal: contagem por dia/hora e tendência dentro da janela coletada.
+"""Contagem por dia/hora e tendência dentro da janela coletada.
 
-Tendência é calculada só dentro da janela de uma coleta (sem histórico
-entre execuções — ver docs/interpretacao_focos.md, "Persistência").
+A tendência só considera a janela de uma coleta, sem histórico entre execuções.
 """
 
 from __future__ import annotations
@@ -21,15 +20,13 @@ def daily_counts(detections: list[FireDetection]) -> dict[str, int]:
 
 
 def hourly_counts(detections: list[FireDetection]) -> dict[str, int]:
-    # Hora UTC da passagem do satélite, agregada por todos os dias da janela —
-    # não é "hora local de início do incêndio".
+    # hora UTC da passagem do satélite, somada sobre todos os dias da janela
     counts = Counter(f"{d.acquired_at.hour:02d}h" for d in detections)
     return dict(sorted(counts.items()))
 
 
 def compute_trend(counts_by_day: dict[str, int]) -> dict:
-    # Regressão linear simples sobre contagem/dia; classificação por variação
-    # percentual 1º->último dia (limiar de 20%, calibrável).
+    # regressão linear sobre contagem/dia + variação percentual 1º/último dia (limiar 20%)
     if len(counts_by_day) < MIN_DAYS_FOR_TREND:
         return {
             "status": "indeterminado",

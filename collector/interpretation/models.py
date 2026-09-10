@@ -32,8 +32,7 @@ class FireDetection:
 
     @property
     def pixel_area_km2(self) -> Optional[float]:
-        # scan/track são os eixos de uma elipse, não os lados de um retângulo —
-        # aproximação de ordem de grandeza, não área geodésica exata.
+        # scan/track são eixos de elipse; isto é só ordem de grandeza
         if self.scan_km is None or self.track_km is None:
             return None
         return round(self.scan_km * self.track_km, 4)

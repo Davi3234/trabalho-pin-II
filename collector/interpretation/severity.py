@@ -1,11 +1,9 @@
-"""Indicador de criticidade por cluster — heurística relativa ao lote, não
-um veredito de gravidade real do incêndio nem substituto do FWI (EFFIS).
+"""Indicador de criticidade por cluster, relativo ao lote (não é gravidade real).
 
 score = (intensidade_norm + persistencia_norm + extensao_norm) / 3 * fator_confianca
 
-Cada termo normalizado pelo máximo observado nesta coleta. Pesos iguais e
-fator de confiança (desconta, não zera, clusters de baixa confiança) são
-calibráveis — ver docs/interpretacao_focos.md.
+Cada termo é normalizado pelo máximo desta coleta. O fator de confiança desconta,
+sem zerar, clusters de baixa confiança.
 """
 
 from __future__ import annotations

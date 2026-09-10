@@ -1,0 +1,193 @@
+:root {
+  --bg: #0e1116;
+  --panel: rgba(20, 24, 31, 0.92);
+  --panel-border: #2a303a;
+  --text: #e8eaed;
+  --text-dim: #9aa3ad;
+  --accent: #ff7a1a;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+}
+
+/* leaflet */
+.leaflet-container {
+  background: #0b0e12;
+  font: inherit;
+}
+/* fundo escuro a partir das tiles do OSM */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.95) saturate(0.75);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.leaflet-popup-content { margin: 12px 14px; line-height: 1.45; }
+.leaflet-bar a {
+  background: var(--panel);
+  color: var(--text);
+  border-bottom-color: var(--panel-border);
+}
+.leaflet-bar a:hover { background: #232935; }
+
+/* ---- overlay panels ---- */
+.overlay {
+  position: absolute;
+  z-index: 1000;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.header {
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+.header h1 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+.header h1 .spark { color: var(--accent); }
+.header .meta { font-size: 12px; color: var(--text-dim); }
+.header .meta b { color: var(--text); font-weight: 600; }
+.header .sep { color: var(--panel-border); }
+
+.controls {
+  top: 74px;
+  left: 12px;
+  padding: 10px 12px;
+  min-width: 190px;
+}
+.controls h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.controls .count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+
+.legend {
+  bottom: 24px;
+  left: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  max-width: 220px;
+}
+.legend h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+.legend .ramp {
+  height: 10px;
+  border-radius: 3px;
+  margin: 4px 0 2px;
+  background: linear-gradient(to right, #ffeda0, #feb24c, #f03b20, #bd0026);
+}
+.legend .ramp-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.legend .sizes {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+.legend .sizes .dot {
+  border-radius: 50%;
+  background: #f03b2088;
+  border: 1px solid #f03b20;
+}
+.legend .note {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.popup-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.popup-rank {
+  display: inline-block;
+  background: var(--accent);
+  color: #1a1005;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  margin-left: 6px;
+}
+.popup-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+  font-size: 12px;
+}
+.popup-grid .k { color: var(--text-dim); }
+.popup-grid .v { text-align: right; font-variant-numeric: tabular-nums; }
+
+.loading, .error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.error { color: #ff6b6b; padding: 24px; text-align: center; }
+
+@media (max-width: 640px) {
+  .header { flex-direction: column; gap: 2px; }
+  .controls { top: 120px; }
+}

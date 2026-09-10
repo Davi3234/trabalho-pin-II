@@ -1,4 +1,4 @@
-"""Mapper: DataFrame cru da FIRMS -> list[FireDetection] (modelo interno)."""
+"""DataFrame cru da FIRMS -> list[FireDetection]."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from .models import Confidence, FireDetection
 
 REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date", "acq_time"}
 
-# Limiares não-oficiais: a FIRMS não documenta corte fixo para o % contínuo
-# do MODIS (orienta "abordagem empírica"). Calibrável.
+# cortes para o % de confiança do MODIS (a FIRMS não fixa um oficial)
 MODIS_LOW_MAX = 30
 MODIS_NOMINAL_MAX = 80
 
@@ -52,7 +51,7 @@ def _parse_confidence(raw: object, sensor: str) -> tuple[Confidence, str]:
 
 
 def _parse_acquired_at(acq_date: object, acq_time: object) -> datetime | None:
-    # acq_time vem como HHMM sem separador e sempre em UTC (ex.: 120 = 01:20 UTC).
+    # acq_time vem como HHMM sem separador, em UTC (ex.: 120 = 01:20)
     try:
         time_str = str(int(acq_time)).zfill(4)
         hour, minute = int(time_str[:2]), int(time_str[2:])
