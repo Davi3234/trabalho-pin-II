@@ -10,68 +10,71 @@ Coleta automaticamente focos de calor detectados por satélite (NASA FIRMS), cru
 
 ```
 ignis/
-├── collector/                  # coletor Python (FIRMS) + camada de interpretação
-│   ├── firms_collector.py      # client HTTP da FIRMS: baixa CSV, valida, salva
-│   ├── interpretation/         # transforma o CSV cru em informação analítica
-│   │   ├── models.py           # modelo interno (FireDetection, FireCluster, InterpretationReport)
-│   │   ├── mapper.py           # CSV da FIRMS -> modelo interno (validação, normalização)
-│   │   ├── spatial.py          # clustering espaço-temporal + densidade por região
-│   │   ├── temporal.py         # contagem diária/horária + tendência
-│   │   ├── severity.py         # indicador relativo de criticidade por cluster
-│   │   └── service.py          # orquestra tudo em um InterpretationReport (JSON)
-│   ├── tests/                  # pytest — mapper, spatial, temporal, severity, service, resiliência
-│   ├── requirements.txt
-│   ├── requirements-dev.txt    # + pytest
-│   └── .env.example
-├── docs/                        # documentação do projeto (escopo, requisitos, derivação RADIAN)
-│   ├── mini_escopo_IGNIS.md
-│   └── interpretacao_focos.md  # metodologia da camada de interpretação (clustering, criticidade, limitações)
-├── backend/                     # (a criar na 3ª fase) API FastAPI
-├── frontend/                    # dashboard React + Vite — 1ª iteração: mapa de focos/clusters
-└── README.md
+├── backend/                    # pacote Python único: coletor, API e worker compartilham modelos/config
+│   ├── ignis/
+│   │   ├── config.py           # configuração via .env (pydantic-settings)
+│   │   ├── db/                 # modelos SQLAlchemy 2 + GeoAlchemy2, sessão, seed das regiões
+│   │   ├── collectors/firms/   # coletor da NASA FIRMS (cli.py)
+│   │   ├── interpretation/     # clustering, densidade, tendência, criticidade (ver docs/interpretacao_focos.md)
+│   │   └── api/                # FastAPI (por enquanto só /health)
+│   ├── migrations/             # Alembic
+│   ├── seeds/regions.geojson   # fronteiras Natural Earth 1:50m (PT, ES, FR, IT, GR, Califórnia)
+│   ├── scripts/                # utilitários (geração do seed)
+│   └── tests/
+├── frontend/                   # React + Vite + react-leaflet — 1ª iteração: mapa (dados estáticos)
+├── infra/docker-compose.yml    # PostGIS 16 + API
+├── docs/                       # escopo, requisitos, rastreabilidade, pendências
+└── .env.example
 ```
 
-`backend/` ainda não existe — será criado na 3ª fase (implementação). O `frontend/` já
-tem uma primeira iteração: o **mapa** de agrupamentos (raio ∝ FRP, cor pela criticidade
-relativa), com camadas de densidade e focos individuais, lendo uma amostra real do
-relatório de interpretação (ver `frontend/README.md`). As demais visualizações do escopo
-(§6) entram nas próximas iterações.
+O que está pronto e o que falta, etapa por etapa: [docs/pendencias.md](docs/pendencias.md).
+Requisitos → código → testes: [docs/rastreabilidade.md](docs/rastreabilidade.md).
 
-Por enquanto, o coletor já entrega mais que o CSV cru: com `--interpret`,
-também produz um relatório de interpretação (clusters, densidade, tendência, indicador de
-criticidade) em JSON — pensado para ser reaproveitado pelo backend da 3ª fase sem reescrever a
-lógica de análise. Veja [docs/interpretacao_focos.md](docs/interpretacao_focos.md) para a
-metodologia completa e suas limitações.
+## Como rodar
 
-## Como rodar o coletor
+### Com Docker (banco + API)
 
-1. Registre uma **MAP_KEY** gratuita da NASA FIRMS em https://firms.modaps.eosdis.nasa.gov/api/map_key/ (veja `docs/guia_map_key_firms.md`).
-2. Copie `collector/.env.example` para `collector/.env` e preencha sua chave:
+1. Copie o `.env.example` para `.env` na raiz e defina `POSTGRES_PASSWORD` (e a `FIRMS_MAP_KEY`, veja
+   `docs/guia_map_key_firms.md`).
+2. Suba a stack:
    ```
-   cp collector/.env.example collector/.env
+   docker compose -f infra/docker-compose.yml --env-file .env up -d --build
    ```
-3. Instale as dependências:
-   ```
-   cd collector
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-4. Rode o coletor:
-   ```
-   python firms_collector.py
-   ```
-   Ou, para já gerar o relatório de interpretação (clusters, densidade, tendência, criticidade) junto com o CSV cru:
-   ```
-   python firms_collector.py --interpret
-   ```
+   A API aplica as migrations e o seed das regiões ao iniciar. Para conferir: `curl http://127.0.0.1:8000/health`
+   (responde `degraded` até a primeira coleta ser registrada). Documentação OpenAPI em `http://127.0.0.1:8000/docs`.
 
-Isso vai baixar os focos de calor das últimas 24h para o bounding box do Mediterrâneo e salvar em `collector/output/` (`firms_*.csv` e, com `--interpret`, `interpretacao_*.json`).
+### Desenvolvimento local do backend
 
-**Rodar os testes:**
 ```
-pip install -r requirements-dev.txt
-pytest
+cd backend
+python -m venv .venv && .venv/Scripts/activate   # Linux/macOS: source .venv/bin/activate
+pip install -e ".[dev]"
+cp ../.env .env                                  # DATABASE_URL apontando para 127.0.0.1
+alembic upgrade head && python -m ignis.db.seed
 ```
+
+> No Windows, use `127.0.0.1` e não `localhost` na `DATABASE_URL`: `localhost` tenta IPv6 primeiro e
+> cada conexão leva cerca de 2 minutos.
+
+**Coleta manual** (CSV + relatório de interpretação em `./output/`):
+```
+python -m ignis.collectors.firms.cli --region mediterraneo --interpret
+```
+
+**Testes, lint e formatação:**
+```
+pytest                                     # testes de unidade
+TEST_DATABASE_URL=postgresql+psycopg://ignis:<senha>@127.0.0.1:5432/ignis_test pytest   # + integração com PostGIS
+ruff check ignis tests migrations && black --check ignis tests migrations/env.py
+```
+Os testes de integração recriam o schema do banco apontado: use um banco descartável
+(`docker exec ignis-db-1 psql -U ignis -c "CREATE DATABASE ignis_test"`).
+
+### Como adicionar uma região
+
+Hoje, insira uma linha em `regions` com `collect = true` (o CRUD pela API/admin entra na etapa 4). Os focos
+**não** são ligados a uma região por chave estrangeira: a pertença é calculada geograficamente, então uma região
+nova já "enxerga" todo o histórico de focos que caem dentro dela.
 
 ## Cronograma da disciplina (75PIN)
 
@@ -85,8 +88,8 @@ pytest
 ## Próximos passos técnicos
 
 - [x] Validar coleta real da FIRMS (bounding box Mediterrâneo, sensor VIIRS_NOAA20_NRT)
-- [x] Camada de interpretação dos focos (clustering, densidade, tendência, criticidade) — ver `collector/interpretation/`
-- [ ] Persistir focos e relatórios de interpretação em banco geoespacial (PostgreSQL + PostGIS) — hoje o histórico entre execuções não é deduplicado nem mantido (ver docs/interpretacao_focos.md §7)
+- [x] Camada de interpretação dos focos (clustering, densidade, tendência, criticidade) — ver `backend/ignis/interpretation/`
+- [~] Banco geoespacial (PostgreSQL + PostGIS): schema, migrations e seed prontos; gravação dos focos pelo coletor entra na etapa 2
 - [ ] Ingerir índice FWI do EFFIS
 - [~] Dashboard (React + Leaflet/MapLibre + Recharts) — mapa de focos/clusters feito (`frontend/`); série temporal, ranking e painel FWI pendentes
 - [ ] Alertas por limiar configurável

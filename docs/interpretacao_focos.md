@@ -1,7 +1,7 @@
 # Camada de interpretação de focos de calor (NASA FIRMS)
 
 > Complementa o [mini-escopo](mini_escopo_IGNIS.md) (§2, §5, §8) com o detalhamento técnico de
-> `collector/interpretation/` — o módulo que transforma o CSV cru da FIRMS em informação
+> `backend/ignis/interpretation/` — o módulo que transforma o CSV cru da FIRMS em informação
 > analítica (clusters, densidade, tendência, indicador de criticidade).
 
 ## 1. Por que existe esta camada
@@ -88,7 +88,7 @@ score_final = score_bruto · (0.5 + 0.5 · fração_de_detecções_alta_confian�
 
 Pesos iguais por não haver, nos dados disponíveis, base empírica para privilegiar um fator
 sobre outro. Calibrar de verdade exigiria cruzar com incidentes confirmados (CAL FIRE,
-EFFIS) — fora do escopo desta camada. Ver `collector/interpretation/severity.py` para a
+EFFIS) — fora do escopo desta camada. Ver `backend/ignis/interpretation/severity.py` para a
 implementação e o racional completo.
 
 ## 6. Falsos positivos e interpretações erradas a evitar
@@ -113,7 +113,7 @@ implementação e o racional completo.
 ## 7. Persistência (estado atual)
 
 Nesta fase, **não há banco de dados**. Cada execução com `--interpret` produz um arquivo
-`interpretacao_<região>_<sensor>_<timestamp>.json` em `collector/output/`, ao lado do CSV
+`interpretacao_<região>_<sensor>_<timestamp>.json` em `output/` (diretório de onde o coletor foi executado), ao lado do CSV
 cru. Consequências assumidas conscientemente:
 - **Tendência e persistência são calculadas só dentro da janela de uma coleta** (até 5 dias,
   limite da Area API da FIRMS), não como série histórica de longo prazo entre execuções.

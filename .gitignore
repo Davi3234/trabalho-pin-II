@@ -17,3 +17,10 @@ build/
 
 # OS
 .DS_Store
+
+# Backend
+backend/output/
+*.egg-info/
+.coverage
+.pytest_cache/
+.ruff_cache/

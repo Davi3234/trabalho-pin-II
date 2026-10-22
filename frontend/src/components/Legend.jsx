@@ -27,7 +27,7 @@ export default function Legend({ showDetections }) {
 
       <div className="note">
         Foco de calor ≠ incêndio confirmado. O score é relativo a este lote, não
-        gravidade real. Ver <code>docs/interpretacao_focos.md</code>.
+        gravidade real.
       </div>
     </div>
   )
