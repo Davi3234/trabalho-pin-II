@@ -46,13 +46,18 @@ no prazo** — ver "Cortes sugeridos" no fim.
 ### Etapa 2 — Coleta · ✅ — resta:
 - [ ] `scripts/smoke_firms.py` com a chave real (hoje validado manualmente com `--once`/`--backfill`).
 
-### Etapa 3 — FWI (RF03) · ~2 dias · **depende de investigação**
-- [ ] **Investigar e reportar antes de codificar** a fonte gratuita e estável do FWI diário:
-      WMS/WCS do EFFIS (`GetFeatureInfo`) vs. dataset de fire danger do Copernicus CDS
-      (exige conta/chave CDS e tem latência maior). Registrar em `docs/fonte-fwi.md`.
-- [ ] Interface `FwiProvider` + implementação escolhida; valor agregado por região (média/máx).
-- [ ] Confirmar os limiares oficiais das classes de perigo do EFFIS (muito baixo → extremo).
-- [ ] Job diário no worker; testes com resposta mockada.
+### Etapa 3 — FWI (RF03) · ✅ (21/10)
+- [x] Investigação da fonte em `docs/fonte-fwi.md`: **WMS do GWIS** (`ecmwf.fwi`, `GetMap` em
+      GeoTIFF float32, sem chave, global, previsão até D+9). O WMS do EFFIS (`mf010`) devolve o
+      template vazio, e o CDS/EWDS fica como reserva.
+- [x] `FwiProvider` + `GwisWmsProvider`; média e máximo por região (pixels dentro do polígono).
+- [x] Escala oficial confirmada (Baixo < 11,2 … Muito extremo ≥ 70). A migration `0002` troca
+      `very_low` por `very_extreme` e adiciona `fwi_max`/`pixel_count`.
+- [x] Job no worker a cada `FWI_INTERVAL_HOURS` (12 h), de D−1 a D+`FWI_DAYS_AHEAD` com upsert,
+      e `--backfill-fwi N`; 20 testes (HTTP mockado + PostGIS). Ciclo real: 9 regiões × 3 datas
+      em 12,5 s.
+- [ ] Expor na API (`/api/fwi`) e no frontend (cartão de FWI): entra nas etapas 4 e 7.
+- [ ] Atribuição "EFFIS/GWIS, Copernicus EMS (CC BY 4.0)" na interface e no boletim.
 
 ### Etapa 4 — API (RF04, RF05, RF08, RF09) · ~1,5 dia restante
 - [x] Focos com filtros (via `/api/interpretation`), série diária, ranking por país, `Cache-Control`.
@@ -111,6 +116,6 @@ no prazo** — ver "Cortes sugeridos" no fim.
 ## Decisões pendentes do time
 
 1. Confirmar o pacote único `backend/` (adotado na etapa 1) em vez de `collector/`/`backend/`/`worker/` separados.
-2. Fonte do FWI (resultado da investigação da etapa 3).
+2. ~~Fonte do FWI~~: decidido em 21/10, WMS do GWIS (ver `docs/fonte-fwi.md`).
 3. Infraestrutura do servidor da UDESC (ver etapa 8).
 4. Conta Anthropic com créditos para a `ANTHROPIC_API_KEY` (e qual modelo usar em `LLM_MODEL`).

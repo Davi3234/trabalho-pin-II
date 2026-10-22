@@ -86,7 +86,19 @@ e no boletim: *"Índice FWI: EFFIS/GWIS, Copernicus Emergency Management Service
 Como boa prática, o coletor faz **uma requisição por região por dia**, com `User-Agent`
 identificado e cache.
 
-## Proposta de implementação (para a revisão)
+## Implementação (aprovada e feita em 21/10/2026)
+
+Seguiu a proposta abaixo. O job roda a cada `FWI_INTERVAL_HOURS` (12 h, e não 1×/dia, para
+pegar a rodada mais recente da previsão). Primeiro ciclo real, gravando no banco de teste:
+9 regiões × 3 datas = 27 leituras em 12,5 s. Portugal ficou com 948 pixels no polígono e FWI
+médio de 17,0 em 21/10.
+
+Ressalva sobre o máximo: ele reflete o pior pixel de ~10 km. Em 22/10, a Itália teve média 3,0
+e máximo 95,4, vindo de um bloco de pixels vizinhos na costa leste da Sardenha (previsão real,
+não ruído isolado). Por isso a classe da região vem da média, e o máximo é apresentado como
+"pior ponto".
+
+### Proposta original
 
 1. `collectors/fwi/provider.py`: interface `FwiProvider.fetch(bbox, date) -> FwiGrid`
    (valores, transformação de pixel para coordenada, nodata).

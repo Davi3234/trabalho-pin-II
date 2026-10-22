@@ -17,6 +17,7 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
     "apscheduler>=3.10,<4",
+    "pillow>=10.3",  # leitura do GeoTIFF float32 do FWI (WMS GWIS)
 ]
 
 [project.optional-dependencies]

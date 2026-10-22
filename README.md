@@ -72,6 +72,7 @@ alembic upgrade head && python -m ignis.db.seed
 ```
 python -m ignis.worker --once            # um ciclo
 python -m ignis.worker --backfill 30     # histórico dos últimos 30 dias
+python -m ignis.worker --backfill-fwi 30 # histórico do FWI (GWIS, sem chave) dos últimos 30 dias
 python -m ignis.worker                   # agendado
 ```
 
@@ -111,7 +112,7 @@ nova já "enxerga" todo o histórico de focos que caem dentro dela.
 - [x] Validar coleta real da FIRMS (bounding box Mediterrâneo, sensor VIIRS_NOAA20_NRT)
 - [x] Camada de interpretação dos focos (clustering, densidade, tendência, criticidade) — ver `backend/ignis/interpretation/`
 - [x] Banco geoespacial (PostgreSQL + PostGIS) + coleta agendada com deduplicação, limite de transações e histórico desde 01/07/2026
-- [ ] Ingerir índice FWI do EFFIS
+- [x] Ingerir índice FWI do EFFIS/GWIS (worker, a cada 12 h, com previsão até D+3)
 - [~] Dashboard — mapa lendo da API, seletor de região/período, série diária e ranking por país feitos; painel FWI, histórico, boletins e admin pendentes
 - [ ] Alertas por limiar configurável
 - [ ] Camada de IA generativa (boletim + assistente)
