@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from ignis.api.main import app
@@ -107,3 +108,81 @@ def test_ranking_counts_per_country(client):
 def test_public_responses_are_cacheable(client):
     resp = client.get("/api/stats/ranking")
     assert "max-age" in resp.headers["cache-control"]
+
+
+def test_detections_geojson_by_region(client):
+    body = client.get("/api/detections", params={"region": "grecia-pais"}).json()
+    assert body["type"] == "FeatureCollection"
+    assert body["metadata"] == body["metadata"] | {"count": 2, "truncated": False}
+    feature = body["features"][0]
+    assert feature["geometry"] == {"type": "Point", "coordinates": [23.72, 37.98]}  # lon, lat; mais recente
+    assert feature["properties"]["confidence"] == "high"
+
+
+def test_detections_limit_keeps_newest_and_flags_truncation(client):
+    body = client.get("/api/detections", params={"limit": 1}).json()
+    assert body["metadata"]["truncated"] is True
+    assert body["features"][0]["geometry"]["coordinates"] == [23.72, 37.98]
+
+
+def test_detections_bbox_crops_the_map(client):
+    body = client.get("/api/detections", params={"bbox": "-10,36,-6,40"}).json()
+    assert [f["geometry"]["coordinates"] for f in body["features"]] == [[-7.91, 38.57]]
+
+
+@pytest.mark.parametrize("bbox", ["1,2,3", "10,36,-6,40", "x,y,z,w"])
+def test_detections_invalid_bbox_is_422(client, bbox):
+    assert client.get("/api/detections", params={"bbox": bbox}).status_code == 422
+
+
+def test_history_is_paginated_newest_first(client):
+    params = {"region": "portugal", "start": "2026-08-01", "page_size": 1}
+    page1 = client.get("/api/history", params=params).json()
+    assert (page1["total"], page1["pages"]) == (2, 2)
+    page2 = client.get("/api/history", params={**params, "page": 2}).json()
+    assert page1["items"][0]["acquired_at_utc"] > page2["items"][0]["acquired_at_utc"]
+    assert page2["items"][0]["acquired_at_utc"].startswith("2026-08-27T13:00")
+
+
+def test_history_rejects_inverted_period(client):
+    params = {"region": "portugal", "start": "2026-09-10", "end": "2026-09-01"}
+    assert client.get("/api/history", params=params).status_code == 422
+
+
+def test_history_csv_export(client):
+    resp = client.get(
+        "/api/history.csv", params={"region": "portugal", "start": "2026-08-27", "end": "2026-08-27"}
+    )
+    assert resp.status_code == 200
+    assert "ignis_focos_portugal_2026-08-27_2026-08-27.csv" in resp.headers["content-disposition"]
+    lines = resp.text.strip().split("\n")
+    assert lines[0].startswith("acquired_at_utc,latitude,longitude,sensor")
+    assert len(lines) == 2
+    assert lines[1].startswith("2026-08-27T13:00:00+00:00,38.57,-7.91,VIIRS_NOAA20_NRT")
+
+
+def test_burned_area_counts_each_viirs_cell_once(client):
+    # os dois focos de Atenas estão a ~110 m: mesma célula de 375 m
+    body = client.get("/api/stats/burned-area", params={"region": "grecia-pais", "days": 7}).json()
+    assert body["estimated"] is True
+    assert body["total_km2"] == round(0.375**2, 2)
+    assert body["series"][-1]["cumulative_km2"] == body["total_km2"]
+    assert len(body["series"]) == 7
+
+
+def test_fwi_series_marks_forecast_and_attribution(client, db_engine):
+    today = datetime.now(timezone.utc).date()
+    with db_engine.begin() as conn:
+        conn.execute(text("TRUNCATE fwi_readings"))
+        region_id = conn.scalar(text("SELECT id FROM regions WHERE slug = 'grecia-pais'"))
+        for offset, value in [(-1, 30.0), (0, 40.0), (2, 55.0)]:
+            conn.execute(
+                text(
+                    "INSERT INTO fwi_readings (region_id, date, fwi_value, fwi_max, pixel_count, "
+                    "danger_class, provider) VALUES (:r, :d, :v, :v + 10, 100, 'high', 'gwis_ecmwf')"
+                ),
+                {"r": region_id, "d": today + timedelta(days=offset), "v": value},
+            )
+    body = client.get("/api/fwi", params={"region": "grecia-pais", "days_back": 0}).json()
+    assert "Copernicus" in body["attribution"]
+    assert [(r["fwi_mean"], r["forecast"]) for r in body["readings"]] == [(40.0, False), (55.0, True)]

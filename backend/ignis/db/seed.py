@@ -76,7 +76,8 @@ def upsert_regions(session: Session) -> tuple[int, int]:
         geom = func.ST_SetSRID(func.ST_GeomFromGeoJSON(json.dumps(row["geometry"])), 4326)
         region = session.scalar(select(Region).where(Region.slug == row["slug"]))
         if region is None:
-            region = Region(slug=row["slug"])
+            # `collect` só na criação: a API roda o seed a cada boot e não pode desfazer o que o admin mudou
+            region = Region(slug=row["slug"], collect=row["collect"])
             session.add(region)
             created += 1
         else:
@@ -84,7 +85,6 @@ def upsert_regions(session: Session) -> tuple[int, int]:
         region.name = row["name"]
         region.kind = row["kind"]
         region.west, region.south, region.east, region.north = west, south, east, north
-        region.collect = row["collect"]
         region.geom = geom
     return created, updated
 

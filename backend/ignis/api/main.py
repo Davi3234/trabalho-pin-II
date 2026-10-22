@@ -9,13 +9,17 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ignis.api.admin import router as admin_router
+from ignis.api.auth import router as auth_router
 from ignis.api.public import router as public_router
 from ignis.config import get_settings
 from ignis.db.models import CollectionRun, RunStatus
 from ignis.db.session import get_session
 
-app = FastAPI(title="IGNIS API", version="0.3.0", description="DSS de monitoramento de incêndios florestais.")
+app = FastAPI(title="IGNIS API", version="0.4.0", description="DSS de monitoramento de incêndios florestais.")
 app.include_router(public_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 
 @app.get("/health", tags=["infra"])
