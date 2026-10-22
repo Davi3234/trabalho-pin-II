@@ -1,6 +1,6 @@
 # IGNIS — O que foi feito e o que falta (3ª fase)
 
-> Estado em **21/10/2026** (etapas 1 e 2 feitas + fatia das etapas 4 e 7). Prazo: **07/11/2026**.
+> Estado em **21/10/2026** (etapas 1 a 4 feitas + fatia da etapa 7). Prazo: **07/11/2026**.
 > Referência: plano de execução em [`prompt.md`](prompt.md). Rastreabilidade em [`rastreabilidade.md`](rastreabilidade.md).
 
 ## Feito — Etapa 1 (Fundação)
@@ -46,20 +46,39 @@ no prazo** — ver "Cortes sugeridos" no fim.
 ### Etapa 2 — Coleta · ✅ — resta:
 - [ ] `scripts/smoke_firms.py` com a chave real (hoje validado manualmente com `--once`/`--backfill`).
 
-### Etapa 3 — FWI (RF03) · ~2 dias · **depende de investigação**
-- [ ] **Investigar e reportar antes de codificar** a fonte gratuita e estável do FWI diário:
-      WMS/WCS do EFFIS (`GetFeatureInfo`) vs. dataset de fire danger do Copernicus CDS
-      (exige conta/chave CDS e tem latência maior). Registrar em `docs/fonte-fwi.md`.
-- [ ] Interface `FwiProvider` + implementação escolhida; valor agregado por região (média/máx).
-- [ ] Confirmar os limiares oficiais das classes de perigo do EFFIS (muito baixo → extremo).
-- [ ] Job diário no worker; testes com resposta mockada.
+### Etapa 3 — FWI (RF03) · ✅ (21/10)
+- [x] Investigação da fonte em `docs/fonte-fwi.md`: **WMS do GWIS** (`ecmwf.fwi`, `GetMap` em
+      GeoTIFF float32, sem chave, global, previsão até D+9). O WMS do EFFIS (`mf010`) devolve o
+      template vazio, e o CDS/EWDS fica como reserva.
+- [x] `FwiProvider` + `GwisWmsProvider`; média e máximo por região (pixels dentro do polígono).
+- [x] Escala oficial confirmada (Baixo < 11,2 … Muito extremo ≥ 70). A migration `0002` troca
+      `very_low` por `very_extreme` e adiciona `fwi_max`/`pixel_count`.
+- [x] Job no worker a cada `FWI_INTERVAL_HOURS` (12 h), de D−1 a D+`FWI_DAYS_AHEAD` com upsert,
+      e `--backfill-fwi N`; 20 testes (HTTP mockado + PostGIS). Ciclo real: 9 regiões × 3 datas
+      em 12,5 s.
+- [x] Expor na API (`/api/fwi`, etapa 4).
+- [ ] Cartão de FWI no frontend (etapa 7).
+- [ ] Atribuição "EFFIS/GWIS, Copernicus EMS (CC BY 4.0)" na interface e no boletim.
 
-### Etapa 4 — API (RF04, RF05, RF08, RF09) · ~1,5 dia restante
+### Etapa 4 — API (RF04, RF05, RF08, RF09) · ✅ (21/10) — aguardando revisão
 - [x] Focos com filtros (via `/api/interpretation`), série diária, ranking por país, `Cache-Control`.
-- [ ] `GET /detections` em GeoJSON com bbox e limite (hoje os focos vêm junto da interpretação).
-- [ ] Área queimada estimada (pixels distintos numa grade do tamanho do pixel × área nominal).
-- [ ] `GET /history` paginado + exportação CSV.
-- [ ] CRUD de regiões (admin) com validação de bbox; auth admin via `.env` + JWT.
+- [x] `GET /api/detections` em GeoJSON: região e/ou `bbox`, janela, sensor, confiança, FRP; `limit`
+      (padrão 5000, máx. 50 000) fica com os mais recentes e marca `truncated`.
+- [x] `GET /api/stats/burned-area`: área **estimada** por células VIIRS de 375 m distintas, cada uma
+      contada no dia da primeira detecção. Método e limitações em `docs/area_queimada.md`.
+- [x] `GET /api/history` paginado (até 366 dias, 500 por página) + `GET /api/history.csv` em streaming.
+- [x] `GET /api/fwi`: série por região com previsão (`forecast`) e atribuição Copernicus.
+- [x] `POST /api/auth/login` (usuário/senha do `.env` → JWT HS256, 8 h) e CRUD em
+      `/api/admin/regions`. O DELETE só desativa a região, porque FWI, regras e boletins apontam para
+      ela. O bbox de região de país não é editável (o polígono vem do Natural Earth). Sem
+      `ADMIN_PASSWORD` ou `JWT_SECRET` (≥ 32 caracteres), a área admin responde 503.
+- [x] O seed (roda a cada boot da API) não sobrescreve mais o `collect` que o admin mudou.
+      `name` e geometria das regiões do seed continuam vindo do seed.
+- [x] OpenAPI em `/docs`, com tags `público` e `admin` e botão de autorização Bearer. 35 testes novos
+      (135 no total).
+- [ ] Área queimada **oficial** do EFFIS para mostrar ao lado da estimada: verificar o acesso.
+- [ ] Login sem limite de tentativas: aceitável para o MVP atrás do proxy, mas vale um limite no Nginx
+      (etapa 8).
 - [ ] Ranking por país considera só os 5 países + Califórnia: focos no Norte da África, Bálcãs e
       Turquia (dentro do bbox do Mediterrâneo) não entram no ranking — decidir se vale incluir.
 - [ ] Polígonos 1:50m recortam estuários (ex.: Lisboa/Tejo fica fora de Portugal): focos muito
@@ -111,6 +130,6 @@ no prazo** — ver "Cortes sugeridos" no fim.
 ## Decisões pendentes do time
 
 1. Confirmar o pacote único `backend/` (adotado na etapa 1) em vez de `collector/`/`backend/`/`worker/` separados.
-2. Fonte do FWI (resultado da investigação da etapa 3).
+2. ~~Fonte do FWI~~: decidido em 21/10, WMS do GWIS (ver `docs/fonte-fwi.md`).
 3. Infraestrutura do servidor da UDESC (ver etapa 8).
 4. Conta Anthropic com créditos para a `ANTHROPIC_API_KEY` (e qual modelo usar em `LLM_MODEL`).

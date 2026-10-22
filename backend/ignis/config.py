@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,8 +18,18 @@ class Settings(BaseSettings):
     collect_interval_minutes: int = 60
     collect_day_range: int = 2
 
+    # FWI (GWIS/EFFIS): sem chave; recoleta ontem + hoje + previsão de N dias (máx. 9 no GWIS)
+    fwi_interval_hours: int = 12
+    fwi_days_ahead: int = 3
+
     # /health considera a coleta atrasada acima deste limite (RNF01: ciclo <= 3h)
     max_collection_age_minutes: int = 180
+
+    # área administrativa (RF09): um único usuário vindo do .env; sem senha ou segredo, fica desligada
+    admin_username: str = "admin"
+    admin_password: SecretStr | None = None
+    jwt_secret: SecretStr | None = None
+    jwt_expire_minutes: int = 480
 
     @property
     def firms_source_list(self) -> list[str]:

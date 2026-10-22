@@ -63,12 +63,14 @@ class RunStatus(str, enum.Enum):
 
 
 class DangerClass(str, enum.Enum):
-    VERY_LOW = "very_low"
+    """Escala oficial do EFFIS (docs/fonte-fwi.md): não há "muito baixo"; "muito extremo" desde 06/2021."""
+
     LOW = "low"
     MODERATE = "moderate"
     HIGH = "high"
     VERY_HIGH = "very_high"
     EXTREME = "extreme"
+    VERY_EXTREME = "very_extreme"
 
 
 class AlertMetric(str, enum.Enum):
@@ -172,14 +174,26 @@ class FireDetection(Base):
 
 
 class FwiReading(Base):
+    """FWI diário agregado por região (RF03). Datas futuras são previsão e são sobrescritas
+    a cada coleta até a data passar."""
+
     __tablename__ = "fwi_readings"
-    __table_args__ = (UniqueConstraint("region_id", "date", "provider", name="uq_fwi_region_date_provider"),)
+    __table_args__ = (
+        UniqueConstraint("region_id", "date", "provider", name="uq_fwi_region_date_provider"),
+        CheckConstraint(
+            "danger_class IN ('low', 'moderate', 'high', 'very_high', 'extreme', 'very_extreme')",
+            name="ck_fwi_readings_danger_class",
+        ),
+        CheckConstraint("pixel_count > 0", name="ck_fwi_readings_pixel_count"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     region_id: Mapped[int] = mapped_column(ForeignKey("regions.id", ondelete="CASCADE"))
     date: Mapped[date] = mapped_column(Date)
-    fwi_value: Mapped[float] = mapped_column(Float)
-    danger_class: Mapped[DangerClass] = mapped_column(_enum(DangerClass, "danger_class"))
+    fwi_value: Mapped[float] = mapped_column(Float)  # média dos pixels dentro do polígono da região
+    fwi_max: Mapped[float] = mapped_column(Float)  # "pior ponto" da região
+    pixel_count: Mapped[int] = mapped_column(Integer)
+    danger_class: Mapped[DangerClass] = mapped_column(_enum(DangerClass, "danger_class"))  # da média
     provider: Mapped[str] = mapped_column(String(40))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
