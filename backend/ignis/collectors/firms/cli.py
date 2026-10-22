@@ -1,18 +1,20 @@
+"""Coleta avulsa para arquivo (CSV + interpretação JSON), sem banco.
+
+A coleta contínua com persistência é feita pelo worker: python -m ignis.worker
+"""
+
 import argparse
 import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
-from io import StringIO
 from pathlib import Path
 
 import pandas as pd
-import requests
 from dotenv import load_dotenv
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
+from ignis.collectors.firms.client import DAY_RANGE_MAX, DAY_RANGE_MIN, coletar
 from ignis.interpretation import FireInterpretationService
 
 load_dotenv()
@@ -20,80 +22,12 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("ignis.collector")
 
-FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
-
-# limite da Area API da FIRMS
-DAY_RANGE_MIN = 1
-DAY_RANGE_MAX = 5
-
 # bounding boxes (oeste, sul, leste, norte)
 REGIONS = {
     "mediterraneo": "-10,35,28,45",
     "grecia": "19,34,29,42",
     "california": "-125,32,-114,42",
 }
-
-# colunas de interesse do CSV da FIRMS
-COLUNAS_UTEIS = [
-    "latitude",
-    "longitude",
-    "bright_ti4",
-    "scan",
-    "track",
-    "acq_date",
-    "acq_time",
-    "satellite",
-    "confidence",
-    "frp",
-    "daynight",
-]
-
-
-def _sessao_resiliente() -> requests.Session:
-    sessao = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=1.5,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-        raise_on_status=False,
-    )
-    sessao.mount("https://", HTTPAdapter(max_retries=retry))
-    return sessao
-
-
-def montar_url(map_key: str, sensor: str, bbox: str, dias: int) -> str:
-    return f"{FIRMS_BASE_URL}/{map_key}/{sensor}/{bbox}/{dias}"
-
-
-def coletar(map_key: str, sensor: str, bbox: str, dias: int) -> pd.DataFrame:
-    if not (DAY_RANGE_MIN <= dias <= DAY_RANGE_MAX):
-        raise ValueError(
-            f"--days deve estar entre {DAY_RANGE_MIN} e {DAY_RANGE_MAX} "
-            f"(limite da Area API da FIRMS); recebido: {dias}"
-        )
-
-    url = montar_url(map_key, sensor, bbox, dias)
-    sessao = _sessao_resiliente()
-    try:
-        resp = sessao.get(url, timeout=30)
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"Falha de rede ao consultar a FIRMS: {exc}") from exc
-    resp.raise_for_status()
-
-    texto = resp.text.strip()
-    # erros da FIRMS (MAP_KEY inválida etc.) vêm como texto puro com HTTP 200
-    if not texto or "," not in texto.splitlines()[0]:
-        raise RuntimeError(f"Resposta inesperada da FIRMS (não é um CSV válido): {texto[:200]!r}")
-
-    df = pd.read_csv(StringIO(resp.text))
-
-    if df.empty:
-        logger.info("Nenhum foco de calor encontrado para os parâmetros informados.")
-        return df
-
-    colunas_presentes = [c for c in COLUNAS_UTEIS if c in df.columns]
-    return df[colunas_presentes]
 
 
 def salvar(df: pd.DataFrame, regiao: str, sensor: str) -> tuple[Path, str]:

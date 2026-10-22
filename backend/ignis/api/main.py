@@ -1,4 +1,4 @@
-"""API do IGNIS. Nesta etapa (fundação) só expõe o healthcheck (RNF06)."""
+"""API do IGNIS: healthcheck (RNF06) + endpoints públicos de leitura em /api."""
 
 from __future__ import annotations
 
@@ -9,11 +9,13 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ignis.api.public import router as public_router
 from ignis.config import get_settings
 from ignis.db.models import CollectionRun, RunStatus
 from ignis.db.session import get_session
 
-app = FastAPI(title="IGNIS API", version="0.2.0", description="DSS de monitoramento de incêndios florestais.")
+app = FastAPI(title="IGNIS API", version="0.3.0", description="DSS de monitoramento de incêndios florestais.")
+app.include_router(public_router, prefix="/api")
 
 
 @app.get("/health", tags=["infra"])

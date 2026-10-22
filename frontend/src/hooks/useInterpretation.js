@@ -1,31 +1,49 @@
 import { useEffect, useState } from 'react'
+import { getJson } from '../lib/api.js'
 
-// carrega os dados de /public/data; trocar por chamada à API quando o backend existir
-export function useInterpretation() {
+// amostra versionada em /public/data — usada só se a API estiver fora (degradação graciosa)
+async function loadSample() {
+  const base = import.meta.env.BASE_URL
+  const [report, detections] = await Promise.all(
+    ['interpretation.json', 'detections.json'].map((f) =>
+      fetch(`${base}data/${f}`).then((r) => {
+        if (!r.ok) throw new Error(`${f}: HTTP ${r.status}`)
+        return r.json()
+      }),
+    ),
+  )
+  return { report, detections, source: 'sample', lastCollection: null }
+}
+
+export function useInterpretation({ region, hours, until, sensor, minConfidence }) {
   const [state, setState] = useState({ status: 'loading' })
 
   useEffect(() => {
     let alive = true
-    Promise.all([
-      fetch(`${import.meta.env.BASE_URL}data/interpretation.json`).then((r) => {
-        if (!r.ok) throw new Error(`interpretation.json: HTTP ${r.status}`)
-        return r.json()
-      }),
-      fetch(`${import.meta.env.BASE_URL}data/detections.json`).then((r) => {
-        if (!r.ok) throw new Error(`detections.json: HTTP ${r.status}`)
-        return r.json()
-      }),
-    ])
-      .then(([report, detections]) => {
-        if (alive) setState({ status: 'ready', report, detections })
-      })
-      .catch((err) => {
-        if (alive) setState({ status: 'error', error: err.message })
-      })
+    setState((s) => (s.status === 'ready' ? { ...s, refreshing: true } : { status: 'loading' }))
+
+    getJson('/interpretation', { region, hours, until, sensor, min_confidence: minConfidence })
+      .then((body) => ({
+        report: body,
+        detections: body.detections ?? [],
+        source: 'api',
+        lastCollection: body.last_collection_at,
+      }))
+      .catch((apiErr) =>
+        loadSample().then(
+          (sample) => ({ ...sample, apiError: apiErr.message }),
+          () => {
+            throw apiErr
+          },
+        ),
+      )
+      .then((data) => alive && setState({ status: 'ready', ...data }))
+      .catch((err) => alive && setState({ status: 'error', error: err.message }))
+
     return () => {
       alive = false
     }
-  }, [])
+  }, [region, hours, until, sensor, minConfidence])
 
   return state
 }

@@ -1,6 +1,6 @@
 # IGNIS — O que foi feito e o que falta (3ª fase)
 
-> Estado em **21/10/2026**. Prazo da implementação: **07/11/2026** (17 dias).
+> Estado em **21/10/2026** (etapas 1 e 2 feitas + fatia das etapas 4 e 7). Prazo: **07/11/2026**.
 > Referência: plano de execução em [`prompt.md`](prompt.md). Rastreabilidade em [`rastreabilidade.md`](rastreabilidade.md).
 
 ## Feito — Etapa 1 (Fundação)
@@ -16,20 +16,35 @@
 - 49 testes passando (37 herdados + 12 novos, 4 deles de integração com PostGIS real);
   cobertura atual 88% do que existe. ruff + black configurados e aplicados.
 
+## Feito — Etapa 2 (Coleta)
+
+- `collectors/firms/client.py`: cliente da Area API (com data inicial) e do status da MAP_KEY;
+  corrigido o descarte da coluna `brightness` do MODIS.
+- `collectors/firms/rate_limiter.py`: janela deslizante de 10 min (90% de 5000), espera ou desiste,
+  ressincroniza com o contador oficial.
+- `collectors/firms/service.py`: ciclo sobre `regions WHERE collect AND active` × sensores, pula
+  bboxes contidos em outro, cache de 15 min, `INSERT … ON CONFLICT DO NOTHING RETURNING`, falha de um
+  sensor não derruba os demais (`partial`), registro em `collection_runs` com transações medidas.
+- `worker/`: APScheduler (`COLLECT_INTERVAL_MINUTES`), `--once` e `--backfill N`; serviço no Compose.
+- **Carga real** desde 01/07/2026 (limite do NRT; MODIS desde 01/08): 226.486 focos em 10min48s, 1.759 transações medidas (2.034 estimadas), sem erros.
+- Clustering otimizado com grade espacial (20 mil pontos em 0,4 s; resultado idêntico ao exaustivo,
+  coberto por teste).
+
+## Feito — fatia das etapas 4 e 7 (para a apresentação)
+
+- API pública: `GET /api/regions`, `/api/interpretation` (região, horas, `until`, sensor, confiança,
+  FRP mín.), `/api/stats/daily`, `/api/stats/ranking`, `/api/collection/status`, com `Cache-Control`.
+- Frontend lendo da API (cai para a amostra estática se a API estiver fora), seletor de região e
+  período, indicador "dados atualizados …", painel de tendências (série de 90 dias + ranking por
+  país), clique num dia do gráfico mostra aquele dia no mapa, estado na URL.
+
 ## Falta — por etapa
 
 Estimativas grosseiras em dias de trabalho de uma pessoa. Soma ≈ 15–19 dias: **não cabe folgado
 no prazo** — ver "Cortes sugeridos" no fim.
 
-### Etapa 2 — Coleta (RF01, RF02, RNF01, RNF02) · ~2 dias · **prioridade máxima**
-- [ ] `FirmsProvider` sobre o `cli.py` atual: itera `regions WHERE collect AND active` × `FIRMS_SOURCES`.
-- [ ] Rate limiter em janela deslizante de 10 min (5000 transações) + backoff exponencial + cache.
-- [ ] Consultar `/mapserver/mapkey_status/` antes do ciclo e logar transações consumidas.
-- [ ] Persistência com `INSERT ... ON CONFLICT DO NOTHING RETURNING id` (contar focos novos).
-- [ ] Registrar cada ciclo em `collection_runs` (início, fim, linhas, novos, erros por região×sensor).
-- [ ] Worker com APScheduler (intervalo `COLLECT_INTERVAL_MINUTES`, janela `COLLECT_DAY_RANGE` dias)
-      + serviço `worker` no Compose.
-- [ ] Testes com CSV mockado (respx/responses), rate limiter e dedup; `scripts/smoke_firms.py` com chave real.
+### Etapa 2 — Coleta · ✅ — resta:
+- [ ] `scripts/smoke_firms.py` com a chave real (hoje validado manualmente com `--once`/`--backfill`).
 
 ### Etapa 3 — FWI (RF03) · ~2 dias · **depende de investigação**
 - [ ] **Investigar e reportar antes de codificar** a fonte gratuita e estável do FWI diário:
@@ -39,13 +54,16 @@ no prazo** — ver "Cortes sugeridos" no fim.
 - [ ] Confirmar os limiares oficiais das classes de perigo do EFFIS (muito baixo → extremo).
 - [ ] Job diário no worker; testes com resposta mockada.
 
-### Etapa 4 — API (RF04, RF05, RF08, RF09) · ~2,5 dias
-- [ ] `GET /detections` em GeoJSON com filtros (período, sensor, confiança, FRP mín.), bbox e limite.
-- [ ] Agregações: série diária, ranking por país, área queimada estimada (método: pixels distintos
-      numa grade do tamanho do pixel × área nominal — documentar limitações).
+### Etapa 4 — API (RF04, RF05, RF08, RF09) · ~1,5 dia restante
+- [x] Focos com filtros (via `/api/interpretation`), série diária, ranking por país, `Cache-Control`.
+- [ ] `GET /detections` em GeoJSON com bbox e limite (hoje os focos vêm junto da interpretação).
+- [ ] Área queimada estimada (pixels distintos numa grade do tamanho do pixel × área nominal).
 - [ ] `GET /history` paginado + exportação CSV.
 - [ ] CRUD de regiões (admin) com validação de bbox; auth admin via `.env` + JWT.
-- [ ] Cache HTTP (`Cache-Control`/ETag) nos endpoints públicos (RNF06).
+- [ ] Ranking por país considera só os 5 países + Califórnia: focos no Norte da África, Bálcãs e
+      Turquia (dentro do bbox do Mediterrâneo) não entram no ranking — decidir se vale incluir.
+- [ ] Polígonos 1:50m recortam estuários (ex.: Lisboa/Tejo fica fora de Portugal): focos muito
+      costeiros podem não contar no ranking. Alternativa: 1:10m ou buffer de ~2 km.
 
 ### Etapa 5 — Alertas (RF06, RF10, RNF04) · ~3 dias
 - [ ] Motor de regras avaliado após cada coleta (`count`/`frp_sum`/`frp_max`, janela, cooldown).
@@ -62,11 +80,12 @@ no prazo** — ver "Cortes sugeridos" no fim.
       com reaproveitamento por `input_hash`.
 - [ ] `POST /reports/ai`; boletim diário no worker → `bulletins`; exportação PDF (`fpdf2`).
 
-### Etapa 7 — Frontend · ~4 dias
-- [ ] Migrar `frontend/` de JSX para TypeScript; trocar os JSON estáticos de `public/data/` pela API.
-- [ ] Telas: portal (mapa pontos/heatmap + filtros + cartões + boletim), tendências (Recharts),
-      histórico, boletins, assinatura de alertas, privacidade, admin.
-- [ ] Indicador "dados atualizados em …", tooltips explicando FRP e FWI, ESLint + Prettier + Vitest.
+### Etapa 7 — Frontend · ~3 dias restantes
+- [x] Mapa lendo da API, seletor de região/período, indicador de atualização, série diária, ranking.
+- [ ] Migrar de JSX para TypeScript.
+- [ ] Filtros de sensor, confiança e FRP na interface (a API já aceita).
+- [ ] Heatmap, cartão de FWI, telas de histórico, boletins, assinatura, privacidade e admin.
+- [ ] ESLint + Prettier + Vitest; dividir o bundle (aviso de >500 kB no build).
 
 ### Etapa 8 — Robustez e deploy (RNF03, RNF06) · ~1,5 dia
 - [ ] Serviço `frontend` (build + Nginx com proxy `/api`) no Compose.
@@ -78,7 +97,7 @@ no prazo** — ver "Cortes sugeridos" no fim.
 
 - [ ] `docs/rastreabilidade.md` — manter atualizada a cada etapa.
 - [ ] `CLAUDE.md` na raiz com o contexto do `prompt.md` (sugerido pelo próprio prompt).
-- [ ] Commits: a etapa 1 ainda não foi commitada (aguardando revisão).
+- [ ] Commits: etapas 1 e 2 ainda não foram commitadas (aguardando revisão).
 - [ ] Os dados em `collector/output/` (gitignored) ficaram na pasta antiga; mover ou apagar.
 
 ## Cortes sugeridos se o prazo apertar (nesta ordem)

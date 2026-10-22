@@ -14,15 +14,16 @@ ignis/
 │   ├── ignis/
 │   │   ├── config.py           # configuração via .env (pydantic-settings)
 │   │   ├── db/                 # modelos SQLAlchemy 2 + GeoAlchemy2, sessão, seed das regiões
-│   │   ├── collectors/firms/   # coletor da NASA FIRMS (cli.py)
+│   │   ├── collectors/firms/   # NASA FIRMS: client, rate_limiter, service (ciclo de coleta), cli (avulso)
 │   │   ├── interpretation/     # clustering, densidade, tendência, criticidade (ver docs/interpretacao_focos.md)
-│   │   └── api/                # FastAPI (por enquanto só /health)
+│   │   ├── api/                # FastAPI: /health + endpoints públicos em /api
+│   │   └── worker/             # APScheduler: coleta a cada COLLECT_INTERVAL_MINUTES
 │   ├── migrations/             # Alembic
 │   ├── seeds/regions.geojson   # fronteiras Natural Earth 1:50m (PT, ES, FR, IT, GR, Califórnia)
 │   ├── scripts/                # utilitários (geração do seed)
 │   └── tests/
-├── frontend/                   # React + Vite + react-leaflet — 1ª iteração: mapa (dados estáticos)
-├── infra/docker-compose.yml    # PostGIS 16 + API
+├── frontend/                   # React + Vite + react-leaflet + Recharts — mapa e tendências lendo da API
+├── infra/docker-compose.yml    # PostGIS 16 + API + worker
 ├── docs/                       # escopo, requisitos, rastreabilidade, pendências
 └── .env.example
 ```
@@ -32,16 +33,27 @@ Requisitos → código → testes: [docs/rastreabilidade.md](docs/rastreabilidad
 
 ## Como rodar
 
-### Com Docker (banco + API)
+### Com Docker (banco + API + worker)
 
-1. Copie o `.env.example` para `.env` na raiz e defina `POSTGRES_PASSWORD` (e a `FIRMS_MAP_KEY`, veja
-   `docs/guia_map_key_firms.md`).
+1. Copie o `.env.example` para `.env` na raiz e defina `POSTGRES_PASSWORD` e a `FIRMS_MAP_KEY`
+   (veja `docs/guia_map_key_firms.md`).
 2. Suba a stack:
    ```
    docker compose -f infra/docker-compose.yml --env-file .env up -d --build
    ```
-   A API aplica as migrations e o seed das regiões ao iniciar. Para conferir: `curl http://127.0.0.1:8000/health`
-   (responde `degraded` até a primeira coleta ser registrada). Documentação OpenAPI em `http://127.0.0.1:8000/docs`.
+   A API aplica as migrations e o seed das regiões ao iniciar; o worker roda um ciclo de coleta logo ao
+   subir e depois a cada `COLLECT_INTERVAL_MINUTES` (padrão 60). Para conferir:
+   `curl http://127.0.0.1:8000/health`. Documentação OpenAPI em `http://127.0.0.1:8000/docs`.
+3. (Opcional, uma vez) carregue o histórico — o NRT da FIRMS guarda dados desde 01/07 (VIIRS) e 01/08 (MODIS):
+   ```
+   docker compose -f infra/docker-compose.yml --env-file .env run --rm worker python -m ignis.worker --backfill 90
+   ```
+   Consome cerca de 20 transações por dia de histórico (bem abaixo do limite de 5000/10 min).
+4. Suba o portal:
+   ```
+   cd frontend && npm install && npm run dev
+   ```
+   Abre em http://localhost:5173 (o Vite faz proxy de `/api` para `127.0.0.1:8000`).
 
 ### Desenvolvimento local do backend
 
@@ -56,7 +68,14 @@ alembic upgrade head && python -m ignis.db.seed
 > No Windows, use `127.0.0.1` e não `localhost` na `DATABASE_URL`: `localhost` tenta IPv6 primeiro e
 > cada conexão leva cerca de 2 minutos.
 
-**Coleta manual** (CSV + relatório de interpretação em `./output/`):
+**Coleta para o banco** (o mesmo que o worker faz):
+```
+python -m ignis.worker --once            # um ciclo
+python -m ignis.worker --backfill 30     # histórico dos últimos 30 dias
+python -m ignis.worker                   # agendado
+```
+
+**Coleta avulsa para arquivo** (CSV + relatório de interpretação em `./output/`, sem banco):
 ```
 python -m ignis.collectors.firms.cli --region mediterraneo --interpret
 ```
@@ -72,7 +91,9 @@ Os testes de integração recriam o schema do banco apontado: use um banco desca
 
 ### Como adicionar uma região
 
-Hoje, insira uma linha em `regions` com `collect = true` (o CRUD pela API/admin entra na etapa 4). Os focos
+Hoje, insira uma linha em `regions` com `collect = true` (o CRUD pela API/admin entra na etapa 4); ela é
+coletada no próximo ciclo do worker, sem mudar código. Se o bbox estiver inteiro dentro de outra área coletada,
+o worker não faz requisição extra. Os focos
 **não** são ligados a uma região por chave estrangeira: a pertença é calculada geograficamente, então uma região
 nova já "enxerga" todo o histórico de focos que caem dentro dela.
 
@@ -89,9 +110,9 @@ nova já "enxerga" todo o histórico de focos que caem dentro dela.
 
 - [x] Validar coleta real da FIRMS (bounding box Mediterrâneo, sensor VIIRS_NOAA20_NRT)
 - [x] Camada de interpretação dos focos (clustering, densidade, tendência, criticidade) — ver `backend/ignis/interpretation/`
-- [~] Banco geoespacial (PostgreSQL + PostGIS): schema, migrations e seed prontos; gravação dos focos pelo coletor entra na etapa 2
+- [x] Banco geoespacial (PostgreSQL + PostGIS) + coleta agendada com deduplicação, limite de transações e histórico desde 01/07/2026
 - [ ] Ingerir índice FWI do EFFIS
-- [~] Dashboard (React + Leaflet/MapLibre + Recharts) — mapa de focos/clusters feito (`frontend/`); série temporal, ranking e painel FWI pendentes
+- [~] Dashboard — mapa lendo da API, seletor de região/período, série diária e ranking por país feitos; painel FWI, histórico, boletins e admin pendentes
 - [ ] Alertas por limiar configurável
 - [ ] Camada de IA generativa (boletim + assistente)
 - [ ] Deploy no servidor da UDESC

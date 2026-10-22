@@ -42,6 +42,37 @@ class _UnionFind:
             self.parent[ra] = rb
 
 
+KM_PER_DEG_LAT = math.pi * EARTH_RADIUS_KM / 180  # ~111,2 km
+
+
+def _bucket_index(detections: list[FireDetection], cell_deg: float) -> dict[tuple[int, int], list[int]]:
+    buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for i, d in enumerate(detections):
+        buckets[(math.floor(d.latitude / cell_deg), math.floor(d.longitude / cell_deg))].append(i)
+    return buckets
+
+
+def _neighbour_candidates(
+    detections: list[FireDetection], buckets: dict[tuple[int, int], list[int]], cell_deg: float, i: int
+):
+    """Índices j > i que PODEM estar a <= distance_km de i (filtro grosso por grade).
+
+    Evita comparar todos os pares (O(n²)): a célula tem o lado da distância-limite em
+    latitude, e em longitude olhamos k células para cada lado, com k crescendo com a
+    latitude (1° de longitude encolhe por cos(lat)). A decisão final continua sendo a
+    haversine, então o resultado é idêntico ao da comparação exaustiva.
+    """
+    d = detections[i]
+    ci, cj = math.floor(d.latitude / cell_deg), math.floor(d.longitude / cell_deg)
+    lat_extent = min(89.0, abs(d.latitude) + 2 * cell_deg)
+    k = math.ceil(1 / math.cos(math.radians(lat_extent))) + 1
+    for di in (-1, 0, 1):
+        for dj in range(-k, k + 1):
+            for j in buckets.get((ci + di, cj + dj), ()):
+                if j > i:
+                    yield j
+
+
 def cluster_detections(
     detections: list[FireDetection],
     distance_km: float = DEFAULT_DISTANCE_KM,
@@ -53,9 +84,11 @@ def cluster_detections(
 
     uf = _UnionFind(n)
     time_window_seconds = time_window_hours * 3600
+    cell_deg = distance_km / KM_PER_DEG_LAT
+    buckets = _bucket_index(detections, cell_deg)
 
     for i in range(n):
-        for j in range(i + 1, n):
+        for j in _neighbour_candidates(detections, buckets, cell_deg, i):
             dt = abs((detections[i].acquired_at - detections[j].acquired_at).total_seconds())
             if dt > time_window_seconds:
                 continue

@@ -1,14 +1,9 @@
-"""Integração com PostgreSQL+PostGIS real. Pulados sem TEST_DATABASE_URL.
+"""Integração com PostgreSQL+PostGIS real (fixture db_engine em conftest.py)."""
 
-Ex.: TEST_DATABASE_URL=postgresql+psycopg://ignis:senha@127.0.0.1:5432/ignis_test pytest -m db
-O banco é recriado via Alembic (downgrade base + upgrade head) — use um banco descartável.
-"""
-
-import os
 from datetime import date, datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
@@ -16,36 +11,12 @@ from sqlalchemy.orm import Session
 from ignis.db.models import AlertEvent, FireDetection, Region
 from ignis.interpretation.models import Confidence
 
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
-
-pytestmark = [
-    pytest.mark.db,
-    pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL não definida"),
-]
+pytestmark = pytest.mark.db
 
 
 @pytest.fixture(scope="module")
-def engine():
-    from alembic import command
-    from alembic.config import Config
-
-    from ignis.config import get_settings
-
-    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-    get_settings.cache_clear()
-    cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-    cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "..", "migrations"))
-    command.downgrade(cfg, "base")
-    command.upgrade(cfg, "head")
-
-    eng = create_engine(TEST_DATABASE_URL)
-    with Session(eng) as session:
-        from ignis.db.seed import upsert_regions
-
-        upsert_regions(session)
-        session.commit()
-    yield eng
-    eng.dispose()
+def engine(db_engine):
+    return db_engine
 
 
 def _detection(lat: float, lon: float, frp: float = 5.0) -> dict:

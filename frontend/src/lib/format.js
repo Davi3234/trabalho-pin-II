@@ -19,6 +19,21 @@ export function duration(hours) {
   return `${dec1(hours)} h`
 }
 
+const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })
+
+// "há 12 minutos", "há 3 horas"
+export function relativeTime(iso) {
+  if (!iso) return '—'
+  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
+  if (Math.abs(minutes) < 60) return rtf.format(minutes, 'minute')
+  const hours = Math.round(minutes / 60)
+  if (Math.abs(hours) < 48) return rtf.format(hours, 'hour')
+  return rtf.format(Math.round(hours / 24), 'day')
+}
+
+// "2026-08-27" -> "27/08"
+export const dayMonth = (isoDate) => `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}`
+
 export function shortUtc(iso) {
   if (!iso) return '—'
   const d = new Date(iso)

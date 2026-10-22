@@ -88,3 +88,39 @@ def test_grid_density_groups_by_cell_and_sorts_desc():
     assert density[0]["detection_count"] == 2
     assert density[1]["detection_count"] == 1
     assert sum(c["detection_count"] for c in density) == 3
+
+
+def _brute_force_partition(detections, distance_km=3.0, time_window_hours=12.0):
+    from ignis.interpretation.spatial import _UnionFind, haversine_km
+
+    uf = _UnionFind(len(detections))
+    for i, a in enumerate(detections):
+        for j in range(i + 1, len(detections)):
+            b = detections[j]
+            if abs((a.acquired_at - b.acquired_at).total_seconds()) > time_window_hours * 3600:
+                continue
+            if haversine_km(a.latitude, a.longitude, b.latitude, b.longitude) <= distance_km:
+                uf.union(i, j)
+    groups = {}
+    for i in range(len(detections)):
+        groups.setdefault(uf.find(i), set()).add(i)
+    return sorted(sorted(g) for g in groups.values())
+
+
+def test_grid_search_matches_exhaustive_pairwise_comparison():
+    import random
+
+    rnd = random.Random(42)
+    # aglomerados em latitudes variadas (até 62°N, onde 1° de longitude encolhe bastante)
+    centers = [(rnd.uniform(35, 62), rnd.uniform(-10, 28)) for _ in range(40)]
+    detections = []
+    for _ in range(800):
+        lat, lon = rnd.choice(centers)
+        detections.append(
+            make_detection(lat + rnd.gauss(0, 0.03), lon + rnd.gauss(0, 0.04), hour=rnd.randint(0, 23))
+        )
+    position = {id(d): i for i, d in enumerate(detections)}
+
+    grid = sorted(sorted(position[id(d)] for d in c.detections) for c in cluster_detections(detections))
+
+    assert grid == _brute_force_partition(detections)

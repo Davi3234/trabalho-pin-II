@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .mapper import map_dataframe
-from .models import Confidence, InterpretationReport, utcnow
+from .models import Confidence, FireDetection, InterpretationReport, utcnow
 from .severity import DEFAULT_WEIGHTS, rank_clusters_by_severity
 from .spatial import (
     DEFAULT_DISTANCE_KM,
@@ -37,6 +37,31 @@ STRUCTURAL_CAVEATS = [
 ]
 
 
+def _empty_report(region: str, bbox: str, sensor: str) -> InterpretationReport:
+    return InterpretationReport(
+        generated_at=utcnow(),
+        region=region,
+        bbox=bbox,
+        sensor=sensor,
+        window_start=None,
+        window_end=None,
+        total_detections=0,
+        detections=[],
+        clusters=[],
+        density_grid=[],
+        daily_counts={},
+        hourly_counts={},
+        trend={"status": "indeterminado", "reason": "nenhuma detecção no período"},
+        severity_ranking=[],
+        caveats=[
+            "Nenhum foco de calor retornado pela FIRMS para esta região/período — "
+            "isso pode significar ausência real de fogo OU cobertura de nuvens "
+            "impedindo a detecção; a API não distingue os dois casos."
+        ]
+        + STRUCTURAL_CAVEATS,
+    )
+
+
 def interpret(
     df: pd.DataFrame,
     region: str,
@@ -47,41 +72,12 @@ def interpret(
     grid_cell_deg: float = DEFAULT_GRID_CELL_DEG,
     severity_weights: dict[str, float] | None = None,
 ) -> InterpretationReport:
+    """CSV cru da FIRMS -> relatório (usado pelo coletor avulso)."""
     if df is None or df.empty:
-        return InterpretationReport(
-            generated_at=utcnow(),
-            region=region,
-            bbox=bbox,
-            sensor=sensor,
-            window_start=None,
-            window_end=None,
-            total_detections=0,
-            detections=[],
-            clusters=[],
-            density_grid=[],
-            daily_counts={},
-            hourly_counts={},
-            trend={"status": "indeterminado", "reason": "nenhuma detecção no período"},
-            severity_ranking=[],
-            caveats=[
-                "Nenhum foco de calor retornado pela FIRMS para esta região/período — "
-                "isso pode significar ausência real de fogo OU cobertura de nuvens "
-                "impedindo a detecção; a API não distingue os dois casos."
-            ]
-            + STRUCTURAL_CAVEATS,
-        )
+        return _empty_report(region, bbox, sensor)
 
     mapping = map_dataframe(df, sensor)
-    detections = mapping.detections
-
-    clusters = cluster_detections(detections, distance_km=distance_km, time_window_hours=time_window_hours)
-    density = grid_density(detections, cell_size_deg=grid_cell_deg)
-    day_counts = daily_counts(detections)
-    hour_counts = hourly_counts(detections)
-    trend = compute_trend(day_counts)
-    severity = rank_clusters_by_severity(clusters, weights=severity_weights or DEFAULT_WEIGHTS)
-
-    caveats = list(STRUCTURAL_CAVEATS)
+    caveats = []
     if mapping.rows_rejected:
         caveats.append(
             f"{mapping.rows_rejected} de {mapping.rows_received} linha(s) recebida(s) da FIRMS "
@@ -92,9 +88,45 @@ def interpret(
             f"{mapping.rows_duplicated} linha(s) duplicada(s) (mesma coordenada, horário e "
             f"sensor) foram descartadas dentro desta coleta."
         )
+    return interpret_detections(
+        mapping.detections,
+        region=region,
+        bbox=bbox,
+        sensor=sensor,
+        distance_km=distance_km,
+        time_window_hours=time_window_hours,
+        grid_cell_deg=grid_cell_deg,
+        severity_weights=severity_weights,
+        extra_caveats=caveats,
+    )
+
+
+def interpret_detections(
+    detections: list[FireDetection],
+    region: str,
+    bbox: str,
+    sensor: str,
+    distance_km: float = DEFAULT_DISTANCE_KM,
+    time_window_hours: float = DEFAULT_TIME_WINDOW_HOURS,
+    grid_cell_deg: float = DEFAULT_GRID_CELL_DEG,
+    severity_weights: dict[str, float] | None = None,
+    extra_caveats: list[str] | None = None,
+) -> InterpretationReport:
+    """Focos já normalizados (ex.: lidos do banco) -> relatório."""
+    if not detections:
+        return _empty_report(region, bbox, sensor)
+
+    clusters = cluster_detections(detections, distance_km=distance_km, time_window_hours=time_window_hours)
+    density = grid_density(detections, cell_size_deg=grid_cell_deg)
+    day_counts = daily_counts(detections)
+    hour_counts = hourly_counts(detections)
+    trend = compute_trend(day_counts)
+    severity = rank_clusters_by_severity(clusters, weights=severity_weights or DEFAULT_WEIGHTS)
+
+    caveats = list(STRUCTURAL_CAVEATS) + list(extra_caveats or [])
     low_conf = sum(1 for d in detections if d.confidence in (Confidence.LOW, Confidence.UNKNOWN))
     if low_conf:
-        pct = round(100 * low_conf / len(detections), 1) if detections else 0
+        pct = round(100 * low_conf / len(detections), 1)
         caveats.append(
             f"{low_conf} de {len(detections)} detecção(ões) ({pct}%) têm confiança baixa ou "
             f"não reconhecida — maior probabilidade de falso positivo (sun glint, ruído)."
@@ -107,8 +139,8 @@ def interpret(
         region=region,
         bbox=bbox,
         sensor=sensor,
-        window_start=min(acquired_times) if acquired_times else None,
-        window_end=max(acquired_times) if acquired_times else None,
+        window_start=min(acquired_times),
+        window_end=max(acquired_times),
         total_detections=len(detections),
         detections=detections,
         clusters=clusters,

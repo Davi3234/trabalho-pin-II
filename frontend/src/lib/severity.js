@@ -66,4 +66,4 @@ export const CONF_COLOR = {
   n: '#feb24c',
   l: '#7fb3d5',
 }
-export const CONF_LABEL = { h: 'alta', n: 'nominal', l: 'baixa' }
+export const CONF_LABEL = { h: 'alta', n: 'nominal', l: 'baixa', '?': 'não informada' }

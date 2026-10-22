@@ -1,5 +1,13 @@
-import { useMemo } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Rectangle, Popup, Tooltip } from 'react-leaflet'
+import { useEffect, useMemo, useRef } from 'react'
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Rectangle,
+  Popup,
+  Tooltip,
+  useMap,
+} from 'react-leaflet'
 import ClusterPopup from './ClusterPopup.jsx'
 import {
   severityColor,
@@ -14,6 +22,25 @@ const MED_BOUNDS = [
   [35, -10],
   [45, 28],
 ]
+
+// reenquadra o mapa quando a região selecionada muda
+function FitRegion({ bbox }) {
+  const map = useMap()
+  const fitted = useRef(false)
+  const key = bbox ? `${bbox.west},${bbox.south},${bbox.east},${bbox.north}` : ''
+  useEffect(() => {
+    if (!bbox) return
+    const bounds = [
+      [bbox.south, bbox.west],
+      [bbox.north, bbox.east],
+    ]
+    // 1º enquadramento sem animação (link direto para uma região); trocas seguintes animadas
+    if (fitted.current) map.flyToBounds(bounds, { duration: 0.8, padding: [20, 20] })
+    else map.fitBounds(bounds, { padding: [20, 20] })
+    fitted.current = true
+  }, [key, map])
+  return null
+}
 
 function DensityLayer({ cells }) {
   const max = useMemo(
@@ -83,7 +110,7 @@ function ClusterLayer({ clusters }) {
   ))
 }
 
-export default function MapView({ clusters, density, detections, layers }) {
+export default function MapView({ clusters, density, detections, layers, bbox }) {
   return (
     <MapContainer
       className="map"
@@ -98,6 +125,7 @@ export default function MapView({ clusters, density, detections, layers }) {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · focos: NASA FIRMS'
         maxZoom={19}
       />
+      <FitRegion bbox={bbox} />
       {layers.density && <DensityLayer cells={density} />}
       {layers.detections && <DetectionLayer detections={detections} />}
       {layers.clusters && <ClusterLayer clusters={clusters} />}

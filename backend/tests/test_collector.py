@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from ignis.collectors.firms import cli as firms_collector
+from ignis.collectors.firms import client as firms_collector
 
 
 class _FakeResponse:
