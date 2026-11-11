@@ -7,6 +7,12 @@ export const PERIODS = [
   { hours: 168, label: '7 dias' },
 ]
 
+export const VIEWS = [
+  { key: 'map', label: 'Mapa' },
+  { key: 'reports', label: 'Boletins' },
+  { key: 'alerts', label: 'Alertas' },
+]
+
 function Freshness({ source, lastCollection, apiError }) {
   if (source === 'sample') {
     return (
@@ -42,9 +48,13 @@ export default function Header({
   lastCollection,
   apiError,
   refreshing,
+  view,
+  setView,
+  alertActive,
 }) {
   const totalFrp = (report.clusters ?? []).reduce((acc, c) => acc + (c.total_frp_mw ?? 0), 0)
   const live = source === 'api'
+  const onMap = view === 'map'
 
   return (
     <header className="overlay header">
@@ -52,7 +62,22 @@ export default function Header({
         <span className="spark">◆</span> IGNIS
       </h1>
 
-      {live && (
+      <nav className="tabs" aria-label="Telas">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            className={v.key === view ? 'tab active' : 'tab'}
+            aria-current={v.key === view ? 'page' : undefined}
+            onClick={() => setView(v.key)}
+          >
+            {v.label}
+            {v.key === 'alerts' && alertActive && <span className="tab-dot" aria-label="alerta ativo" />}
+          </button>
+        ))}
+      </nav>
+
+      {live && onMap && (
         <div className="selectors">
           <label className="sr-only" htmlFor="region">
             Região
@@ -90,15 +115,17 @@ export default function Header({
         </div>
       )}
 
-      <span className={refreshing ? 'meta stats refreshing' : 'meta stats'}>
-        <b>{int(report.total_detections)}</b> focos
-        <span className="sep"> · </span>
-        <b>{int(clusterCount)}</b> agrupamentos
-        <span className="sep"> · </span>
-        <span title="Fire Radiative Power: energia irradiada pelo fogo, medida pelo satélite. Quanto maior, mais intenso o foco.">
-          FRP <b>{frp(totalFrp)}</b>
+      {onMap && (
+        <span className={refreshing ? 'meta stats refreshing' : 'meta stats'}>
+          <b>{int(report.total_detections)}</b> focos
+          <span className="sep"> · </span>
+          <b>{int(clusterCount)}</b> agrupamentos
+          <span className="sep"> · </span>
+          <span title="Fire Radiative Power: energia irradiada pelo fogo, medida pelo satélite. Quanto maior, mais intenso o foco.">
+            FRP <b>{frp(totalFrp)}</b>
+          </span>
         </span>
-      </span>
+      )}
 
       <Freshness source={source} lastCollection={lastCollection} apiError={apiError} />
     </header>

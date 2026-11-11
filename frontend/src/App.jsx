@@ -7,8 +7,11 @@ import LayerControls from './components/LayerControls.jsx'
 import Legend from './components/Legend.jsx'
 import MapView from './components/MapView.jsx'
 import TrendPanel from './components/TrendPanel.jsx'
+import ReportsPage from './components/ReportsPage.jsx'
+import AlertsPage from './components/AlertsPage.jsx'
+import AlertBanner from './components/AlertBanner.jsx'
 
-// estado inicial a partir da URL (?region=…&hours=…&until=AAAA-MM-DD) — links compartilháveis
+// estado inicial a partir da URL (?view=…&region=…&hours=…&until=AAAA-MM-DD) — links compartilháveis
 const initial = new URLSearchParams(window.location.search)
 
 export default function App() {
@@ -16,12 +19,22 @@ export default function App() {
   const [hours, setHours] = useState(Number(initial.get('hours')) || 48)
   // dia (UTC) escolhido no gráfico; null = até agora
   const [until, setUntil] = useState(initial.get('until'))
+  const [view, setView] = useState(initial.get('view') ?? 'map')
+  // relatório/boletim aberto na tela de boletins (link permanente): "bulletin:AAAA-MM-DD:região" ou "id:N"
+  const [reportRef, setReportRef] = useState(initial.get('report'))
 
   useEffect(() => {
     const qs = new URLSearchParams({ region, hours })
     if (until) qs.set('until', until)
+    if (view !== 'map') qs.set('view', view)
+    if (view === 'reports' && reportRef) qs.set('report', reportRef)
     window.history.replaceState(null, '', `?${qs}`)
-  }, [region, hours, until])
+  }, [region, hours, until, view, reportRef])
+
+  // alerta mais recente (últimas 24h): faixa sobre o mapa, dispensável
+  const recentAlerts = useApi('/alerts/recent', { hours: 24, limit: 1 })
+  const latestAlert = recentAlerts.data?.[0] ?? null
+  const [dismissedAlert, setDismissedAlert] = useState(null)
   const state = useInterpretation({ region, hours, until })
   const regionsState = useApi('/regions')
   const regions = regionsState.data ?? []
@@ -60,6 +73,7 @@ export default function App() {
 
   const { report, detections, source } = state
   const density = report.density_grid ?? []
+  const onMap = view === 'map'
 
   return (
     <div className="app">
@@ -84,27 +98,50 @@ export default function App() {
         lastCollection={state.lastCollection}
         apiError={state.apiError}
         refreshing={state.refreshing}
+        view={view}
+        setView={setView}
+        alertActive={Boolean(latestAlert)}
       />
-      <LayerControls
-        layers={layers}
-        setLayers={setLayers}
-        counts={{
-          clusters: clusters.length,
-          density: density.length,
-          detections: detections.length,
-        }}
-      />
-      <Legend showDetections={layers.detections} />
-      {source === 'api' && (
-        <TrendPanel
+      {view === 'reports' && (
+        <ReportsPage
+          regions={regions}
           region={region}
-          regionName={current?.name ?? region}
-          selectedDay={until}
-          onSelectDay={(day) => {
-            setUntil(day)
-            setHours(24)
-          }}
+          reportRef={reportRef}
+          setReportRef={setReportRef}
         />
+      )}
+      {view === 'alerts' && <AlertsPage regions={regions} />}
+      {onMap && latestAlert && latestAlert.id !== dismissedAlert && (
+        <AlertBanner
+          alert={latestAlert}
+          onOpenAlerts={() => setView('alerts')}
+          onClose={() => setDismissedAlert(latestAlert.id)}
+        />
+      )}
+      {onMap && (
+        <>
+          <LayerControls
+            layers={layers}
+            setLayers={setLayers}
+            counts={{
+              clusters: clusters.length,
+              density: density.length,
+              detections: detections.length,
+            }}
+          />
+          <Legend showDetections={layers.detections} />
+          {source === 'api' && (
+            <TrendPanel
+              region={region}
+              regionName={current?.name ?? region}
+              selectedDay={until}
+              onSelectDay={(day) => {
+                setUntil(day)
+                setHours(24)
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   )

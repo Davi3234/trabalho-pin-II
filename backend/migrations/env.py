@@ -9,7 +9,8 @@ from ignis.db.models import Base
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # sem desligar os loggers existentes: rodando em processo (testes), isso silenciaria os do ignis
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
+import L from 'leaflet'
 import {
   MapContainer,
+  Marker,
   TileLayer,
   CircleMarker,
   Rectangle,
@@ -40,6 +42,23 @@ function FitRegion({ bbox }) {
     fitted.current = true
   }, [key, map])
   return null
+}
+
+// alerta de demonstração: anel pulsante no local e voo até ele
+const pulseIcon = L.divIcon({ className: 'alert-pulse', html: '<span></span>', iconSize: [28, 28] })
+
+function AlertSpot({ alert }) {
+  const map = useMap()
+  useEffect(() => {
+    map.flyTo([alert.lat, alert.lon], 8, { duration: 1.2 })
+  }, [alert.id, map])
+  return (
+    <Marker position={[alert.lat, alert.lon]} icon={pulseIcon} keyboard={false}>
+      <Tooltip direction="top" offset={[0, -14]}>
+        Alerta: {int(alert.value)} focos em 24h · {alert.place}
+      </Tooltip>
+    </Marker>
+  )
 }
 
 function DensityLayer({ cells }) {
@@ -110,7 +129,7 @@ function ClusterLayer({ clusters }) {
   ))
 }
 
-export default function MapView({ clusters, density, detections, layers, bbox }) {
+export default function MapView({ clusters, density, detections, layers, bbox, alert }) {
   return (
     <MapContainer
       className="map"
@@ -129,6 +148,7 @@ export default function MapView({ clusters, density, detections, layers, bbox })
       {layers.density && <DensityLayer cells={density} />}
       {layers.detections && <DetectionLayer detections={detections} />}
       {layers.clusters && <ClusterLayer clusters={clusters} />}
+      {alert && <AlertSpot alert={alert} />}
     </MapContainer>
   )
 }
