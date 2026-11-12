@@ -9,7 +9,7 @@ const formatValue = (metric, v) => (metric === 'count' ? int(v) : frp(v))
 const ERRORS = {
   422: 'Confira o e-mail, as regiões e o aceite da política de privacidade.',
   502: 'Não conseguimos enviar o e-mail de confirmação agora. Tente de novo em alguns minutos.',
-  503: 'O envio de alertas por e-mail não está disponível neste servidor.',
+  503: 'Não foi possível concluir a inscrição agora. Tente de novo mais tarde.',
 }
 
 function SubscribeForm({ regions, privacy }) {
@@ -134,8 +134,6 @@ function RecentAlerts({ state }) {
 export default function AlertsPage({ regions }) {
   const privacy = useApi('/privacy')
   const recent = useApi('/alerts/recent', { hours: 168, limit: 30 })
-  // o servidor informa se a inscrição está disponível (e-mail ligado e configurado)
-  const emailOff = privacy.status === 'ready' && privacy.data.subscriptions_enabled === false
 
   return (
     <div className="page">
@@ -147,14 +145,7 @@ export default function AlertsPage({ regions }) {
               Avisamos quando os focos de calor passam de um limite na região escolhida. Você confirma a
               inscrição por e-mail e pode cancelar em qualquer mensagem.
             </p>
-            {emailOff ? (
-              <p className="demo-banner" role="status">
-                O envio de alertas por e-mail ainda não está ativo neste portal. Os alertas disparados
-                continuam aparecendo ao lado e no mapa.
-              </p>
-            ) : (
-              <SubscribeForm regions={regions} privacy={privacy.data} />
-            )}
+            <SubscribeForm regions={regions} privacy={privacy.data} />
             <details className="privacy">
               <summary>Política de privacidade</summary>
               <p className="hint">{privacy.data?.text ?? 'Carregando…'}</p>

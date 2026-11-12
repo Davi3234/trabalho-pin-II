@@ -6,6 +6,7 @@ python -m ignis.worker --once              # um ciclo de cada e sai
 python -m ignis.worker --backfill 30       # histórico de focos dos últimos 30 dias (blocos de 5 dias)
 python -m ignis.worker --backfill-fwi 30   # histórico do FWI dos últimos 30 dias
 python -m ignis.worker --bulletin          # gera já o boletim de hoje (se ainda não existir) e sai
+python -m ignis.worker --bulletin-backfill 7  # gera pelo Gemini os boletins dos últimos 7 dias e sai
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -23,7 +25,7 @@ from ignis.collectors.firms.service import FirmsCollector
 from ignis.collectors.fwi.gwis import GwisWmsProvider
 from ignis.collectors.fwi.service import FwiCollector
 from ignis.config import get_settings
-from ignis.db.models import Region
+from ignis.db.models import Region, ReportGenerator
 from ignis.db.session import session_scope
 from ignis.notifications.mailer import build_sender
 from ignis.reports.llm import build_provider
@@ -79,6 +81,54 @@ def run_daily_bulletins() -> None:
             logger.exception("Falha ao gerar o boletim de '%s'.", slug)
 
 
+def run_bulletin_backfill(days: int, pause_seconds: float = 15.0) -> None:
+    """Gera os boletins dos `days` dias anteriores a hoje (o de hoje é do agendamento normal).
+
+    Exige o LLM configurado e só grava boletim feito pelo Gemini: um boletim por template não é
+    gravado, porque a geração é idempotente e ele impediria uma nova tentativa. Se a chamada ao LLM
+    falhar (cota, rede), para na hora para não gastar o resto da cota. Pausa entre as chamadas para
+    respeitar o limite por minuto da camada gratuita. Rode `--backfill` e `--backfill-fwi` antes."""
+    settings = get_settings()
+    provider = build_provider(settings)
+    if provider is None:
+        logger.error("Backfill de boletins exige LLM_API_KEY configurada; nada foi gerado.")
+        return
+    today = datetime.now(timezone.utc).date()
+    made = skipped = 0
+    for slug in settings.bulletin_region_list:
+        for offset in range(1, days + 1):
+            day = today - timedelta(days=offset)
+            if offset > 1:
+                time.sleep(pause_seconds)
+            try:
+                with session_scope() as session:
+                    region = session.scalar(select(Region).where(Region.slug == slug, Region.active))
+                    if region is None:
+                        logger.error("Boletim: região '%s' não existe ou está inativa.", slug)
+                        return
+                    bulletin = publish_daily_bulletin(session, region, provider, today=day)
+                    if bulletin is None:
+                        logger.info("Boletim de %s em %s: já existia.", slug, day)
+                        continue
+                    report = bulletin.report
+                    if report.generator != ReportGenerator.LLM:
+                        reason = (report.validation or {}).get("fallback_reason")
+                        session.delete(bulletin)  # sem boletim por template: permite repetir depois
+                        skipped += 1
+                        logger.warning("Boletim de %s em %s NÃO gravado (template: %s).", slug, day, reason)
+                        if reason == "llm_error":
+                            logger.error("Chamada ao Gemini falhou (cota/rede?); interrompendo.")
+                            session.commit()
+                            logger.info("Backfill: %d gerado(s) pelo Gemini, %d descartado(s).", made, skipped)
+                            return
+                        continue
+                    made += 1
+                    logger.info("Boletim de %s em %s gerado pelo Gemini.", slug, day)
+            except Exception:
+                logger.exception("Falha ao gerar o boletim de '%s' em %s.", slug, day)
+    logger.info("Backfill: %d gerado(s) pelo Gemini, %d descartado(s).", made, skipped)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Worker de coleta do IGNIS.")
@@ -96,12 +146,21 @@ def main() -> None:
     group.add_argument(
         "--bulletin", action="store_true", help="Gera o boletim diário de hoje (se não existir) e sai."
     )
+    group.add_argument(
+        "--bulletin-backfill",
+        type=int,
+        metavar="DIAS",
+        help="Gera pelo Gemini os boletins dos últimos N dias (antes de hoje) e sai.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
 
     if args.bulletin:
         run_daily_bulletins()
+        return
+    if args.bulletin_backfill:
+        run_bulletin_backfill(args.bulletin_backfill)
         return
 
     # o FWI não depende da MAP_KEY da FIRMS
