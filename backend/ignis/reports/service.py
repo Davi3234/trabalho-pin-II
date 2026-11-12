@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -158,24 +158,6 @@ def generate_report(
     session.add(report)
     session.flush()
     return ReportResult(report, False)
-
-
-def llm_calls_today(session: Session, now: datetime | None = None) -> int:
-    """Relatórios sob demanda gerados pelo LLM hoje (UTC): base do limite diário de uso da cota gratuita."""
-    now = now or datetime.now(timezone.utc)
-    midnight = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
-    return (
-        session.scalar(
-            select(func.count())
-            .select_from(AiReport)
-            .where(
-                AiReport.kind == ReportKind.ON_DEMAND,
-                AiReport.generator == ReportGenerator.LLM,
-                AiReport.created_at >= midnight,
-            )
-        )
-        or 0
-    )
 
 
 def publish_daily_bulletin(

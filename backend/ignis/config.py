@@ -59,8 +59,6 @@ class Settings(BaseSettings):
     # confira no Google AI Studio qual modelo está na camada gratuita: os nomes e limites mudam
     llm_model: str = "gemini-3.5-flash-lite"
     llm_timeout_seconds: int = 40
-    # relatórios sob demanda (POST /api/reports/ai) gerados pelo LLM por dia (UTC); acima disso, template
-    llm_max_on_demand_per_day: int = 10
     # boletim diário: hora UTC do disparo e regiões (slugs separados por vírgula). 1 região = 1 chamada/dia
     bulletin_hour_utc: int = 7
     bulletin_regions: str = "mediterraneo"

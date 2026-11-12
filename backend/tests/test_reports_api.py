@@ -9,13 +9,11 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from ignis.api.main import app
-from ignis.api.reports import get_llm_provider
 from ignis.collectors.firms.service import persist_detections
-from ignis.config import Settings
 from ignis.db.models import Region
 from ignis.db.session import get_session
 from ignis.interpretation.models import Confidence, FireDetection
-from ignis.reports.llm import LlmError, LlmResult
+from ignis.reports.llm import LlmResult
 from ignis.reports.payload import build_report_input
 from ignis.reports.service import publish_daily_bulletin
 
@@ -59,13 +57,6 @@ class EchoLlm:
         )
 
 
-class DownLlm:
-    name, model = "fake", "fake-1"
-
-    def generate(self, system, user):
-        raise LlmError("fora do ar")
-
-
 @pytest.fixture
 def env(clean_detections, db_session_scope):
     with clean_detections.begin() as conn:
@@ -91,7 +82,6 @@ def env(clean_detections, db_session_scope):
 
     app.dependency_overrides[get_session] = override
     llm = EchoLlm()
-    app.dependency_overrides[get_llm_provider] = lambda: llm
     yield TestClient(app), llm, factory
     app.dependency_overrides.clear()
 
@@ -113,49 +103,35 @@ def test_payload_has_real_numbers_from_the_database(env):
     assert isinstance(payload["alertas_disparados"], list)  # alert_events é append-only: não dá para zerar
 
 
-def test_post_generates_with_llm_and_second_call_is_served_from_cache(env):
+def test_post_never_calls_the_llm_and_uses_the_template(env, monkeypatch):
     client, llm, _ = env
+    # mesmo com LLM configurado no servidor, o endpoint público não pode chegar ao provedor
+    monkeypatch.setattr("ignis.reports.llm.build_provider", lambda settings: llm)
     body = {"region": "grecia-pais", "days": 7}
     first = client.post("/api/reports/ai", json=body).json()
-    assert first["ai_generated"] is True and first["cached"] is False
-    assert first["text"].startswith("Foram 2 focos em 7 dias.")
-    assert "gerado por IA" in first["text"]
-    assert first["validation"]["numbers_ok"] is True
+    assert first["generated_by"] == "template" and first["ai_generated"] is False
+    assert "2 focos de calor" in first["text"]  # o template traz o número real do banco
+    assert "sem uso de inteligência artificial" in first["notice"]
 
     second = client.post("/api/reports/ai", json=body).json()
     assert second["cached"] is True and second["id"] == first["id"]
-    assert llm.calls == 1  # o cache por input_hash não gasta cota
+    assert llm.calls == 0
 
 
-def test_post_without_llm_falls_back_to_template(env):
-    client, _, _ = env
-    app.dependency_overrides[get_llm_provider] = lambda: None
-    body = client.post("/api/reports/ai", json={"region": "grecia-pais"}).json()
-    assert body["generated_by"] == "template" and body["ai_generated"] is False
-    assert body["validation"]["fallback_reason"] == "llm_not_configured"
-    assert "2 focos de calor" in body["text"]  # o template traz o número real do banco
-    assert "sem uso de inteligência artificial" in body["notice"]
-
-
-def test_llm_outage_still_returns_a_report(env):
-    client, _, _ = env
-    app.dependency_overrides[get_llm_provider] = lambda: DownLlm()
-    body = client.post("/api/reports/ai", json={"region": "grecia-pais"})
-    assert body.status_code == 200
-    assert body.json()["validation"]["fallback_reason"] == "llm_error"
-
-
-def test_daily_quota_switches_to_template(env, monkeypatch):
-    client, llm, _ = env
-    monkeypatch.setattr(
-        "ignis.api.reports.get_settings", lambda: Settings(_env_file=None, llm_max_on_demand_per_day=1)
-    )
-    first = client.post("/api/reports/ai", json={"region": "grecia-pais", "days": 7}).json()
-    assert first["ai_generated"] is True and first["llm_quota_exhausted"] is False
-
-    other = client.post("/api/reports/ai", json={"region": "grecia-pais", "days": 5}).json()
-    assert other["generated_by"] == "template" and other["llm_quota_exhausted"] is True
+def test_post_reuses_existing_ai_text_for_same_data_at_no_cost(env):
+    client, llm, factory = env
+    today = NOW.date()
+    with factory() as session:
+        region = session.scalar(select(Region).where(Region.slug == "grecia-pais"))
+        publish_daily_bulletin(session, region, llm, today=today)  # o worker diário usa a IA
+        session.commit()
     assert llm.calls == 1
+
+    # mesmo região e período do boletim (7 dias até ontem) => mesmo hash => texto da IA do cache
+    body = {"region": "grecia-pais", "days": 7, "until": (today - timedelta(days=1)).isoformat()}
+    got = client.post("/api/reports/ai", json=body).json()
+    assert got["cached"] is True and got["ai_generated"] is True
+    assert llm.calls == 1  # nenhuma chamada nova
 
 
 def test_validation_of_request(env):

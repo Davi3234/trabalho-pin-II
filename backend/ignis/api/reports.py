@@ -1,8 +1,8 @@
 """Relatórios por IA (RF11) e boletins diários (RF07).
 
-Públicos e sem login, então o uso do LLM é limitado por dia (`LLM_MAX_ON_DEMAND_PER_DAY`): acima do
-limite, ou sem LLM configurado, a resposta vem do template (e do cache, quando já existe). A chave do
-LLM fica só no servidor; o frontend chama esta API, nunca o fornecedor.
+Públicos e sem login, então o relatório sob demanda nunca usa o LLM: sai do template (ou do cache, quando
+já existe um texto para os mesmos dados). Só o worker chama o LLM, no boletim diário. A chave do LLM
+fica só no servidor; o frontend chama esta API, nunca o fornecedor.
 """
 
 from __future__ import annotations
@@ -14,11 +14,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ignis.config import get_settings
 from ignis.db.models import AiReport, Bulletin, Region, ReportGenerator, ReportKind
 from ignis.db.session import get_session
-from ignis.reports.llm import LlmProvider, build_provider
-from ignis.reports.service import generate_report, llm_calls_today
+from ignis.reports.service import generate_report
 from ignis.reports.template import notice
 
 router = APIRouter(tags=["relatórios"])
@@ -31,11 +29,6 @@ class ReportRequest(BaseModel):
     region: str = Field("mediterraneo", description="slug da região")
     days: int = Field(7, ge=1, le=MAX_DAYS, description="tamanho do período, em dias")
     until: date | None = Field(None, description="último dia (UTC) do período; vazio = hoje")
-
-
-def get_llm_provider() -> LlmProvider | None:
-    """Dependência separada para os testes trocarem o LLM por um falso."""
-    return build_provider(get_settings())
 
 
 def _region_or_404(session: Session, slug: str) -> Region:
@@ -77,23 +70,20 @@ def create_ai_report(
     request: ReportRequest,
     response: Response,
     session: Session = Depends(get_session),
-    provider: LlmProvider | None = Depends(get_llm_provider),
 ) -> dict:
-    """Gera (ou reaproveita, por hash dos dados) o relatório da região e do período."""
+    """Gera (ou reaproveita, por hash dos dados) o relatório da região e do período.
+
+    Sob demanda NUNCA chama o LLM (`provider=None`): a cota da IA é só do boletim diário do worker.
+    O texto sai pelo template; se já existe um texto de IA para os mesmos dados (ex.: o boletim),
+    ele é reaproveitado do cache sem custo."""
     region = _region_or_404(session, request.region)
     end = request.until or datetime.now(timezone.utc).date()
     start = end - timedelta(days=request.days - 1)
 
-    quota_exhausted = False
-    if provider is not None and llm_calls_today(session) >= get_settings().llm_max_on_demand_per_day:
-        provider, quota_exhausted = None, True
-
-    result = generate_report(session, region, start, end, kind=ReportKind.ON_DEMAND, provider=provider)
+    result = generate_report(session, region, start, end, kind=ReportKind.ON_DEMAND, provider=None)
     session.commit()
     response.headers["Cache-Control"] = "no-store"
-    body = report_to_dict(result.report, region, cached=result.cached)
-    body["llm_quota_exhausted"] = quota_exhausted
-    return body
+    return report_to_dict(result.report, region, cached=result.cached)
 
 
 @router.get("/reports/{report_id}")

@@ -119,7 +119,7 @@ def run_bulletin_backfill(days: int, pause_seconds: float = 15.0) -> None:
                         if reason == "llm_error":
                             logger.error("Chamada ao Gemini falhou (cota/rede?); interrompendo.")
                             session.commit()
-                            logger.info("Backfill: %d gerado(s) pelo Gemini, %d descartado(s).", made, skipped)
+                            logger.info("Backfill: %d pelo Gemini, %d descartado(s).", made, skipped)
                             return
                         continue
                     made += 1
