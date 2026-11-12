@@ -10,13 +10,21 @@ jobs:
     steps:
       - name: Deploy via SSH na VM
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: LLM_API_KEY
           script: |
             cd ~/trabalho-pin-II
             git fetch origin main
             git checkout main
             git reset --hard origin/main
+            # grava a chave do Gemini (secret do GitHub) no .env, sem tocar nas outras variáveis
+            if [ -n "$LLM_API_KEY" ]; then
+              sed -i '/^LLM_API_KEY=/d' .env
+              echo "LLM_API_KEY=$LLM_API_KEY" >> .env
+            fi
             sudo docker compose -f infra/docker-compose.yml --env-file .env up -d --build
