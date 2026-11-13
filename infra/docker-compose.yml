@@ -23,6 +23,7 @@ services:
 
   api:
     build: ../backend
+    image: ignis-api
     restart: unless-stopped
     env_file: ../.env
     environment:
@@ -39,7 +40,7 @@ services:
       retries: 3
 
   worker:
-    build: ../backend
+    image: ignis-api # mesma imagem do api (buildada uma vez só)
     restart: unless-stopped
     env_file: ../.env
     environment:

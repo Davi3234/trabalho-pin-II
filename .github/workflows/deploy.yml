@@ -17,7 +17,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: LLM_API_KEY
-          command_timeout: 35m
+          command_timeout: 15m
           script: |
             cd ~/trabalho-pin-II
             git fetch origin main
@@ -28,4 +28,6 @@ jobs:
               sed -i '/^LLM_API_KEY=/d' .env
               echo "LLM_API_KEY=$LLM_API_KEY" >> .env
             fi
-            sudo docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+            # a VM tem ~900 MB de RAM: builda um serviço por vez para não travar a máquina
+            export COMPOSE_PARALLEL_LIMIT=1
+            sudo -E docker compose -f infra/docker-compose.yml --env-file .env up -d --build
